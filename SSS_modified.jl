@@ -19,7 +19,7 @@ using Distances
 
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
-const MAX_NUM_CHILDREN = 50
+const MAX_NUM_CHILDREN = 10
 
 const TOLERANCE = 0.00000001
 
@@ -36,7 +36,7 @@ function counter(f)
 end
 
 function distance_from_matrix(x, y)
-	distance = dist_matrix[convert(Int64, x), convert(Int64, y)]
+	distance = dist_matrix[convert(Int64, x[1]), convert(Int64, y[1])]
 	return distance
 end
 
@@ -60,33 +60,68 @@ mutable struct MultiFocalNode
 end
 
 
-function make_queries(query_dataset, num_queries, query_radius)
+function make_queries(query_dataset, query_radius)
 
-	query_foci = sample(query_dataset, num_queries, replace=false)
+	num_queries = size(query_dataset, 1)
+
+	#query_foci = sample(query_dataset, num_queries, replace=false)
+
+	test_query_foci_index = sample(1:num_queries, convert(Int64, floor(num_queries/2)), replace=false)
 
 	query_radi = rand(0:query_radius, num_queries)
 
-	queries = Vector{Query}()
+	#@assert issetequal(Set(query_foci), Set(query_dataset))
+
+	training_query_dataset = Vector{Query}()
+	testing_query_dataset = Vector{Query}()
 
 	for i = 1:num_queries
-		push!(queries, Query(query_foci[:,i], query_radi[i]))
+		if i in test_query_foci_index
+			push!(training_query_dataset, Query(query_dataset[i], query_radi[i]))
+		else
+			push!(testing_query_dataset, Query(query_dataset[i], query_radi[i]))
+		end
 	end
 
-	return queries
+	
+
+	return training_query_dataset, testing_query_dataset
 
 end
 
 function make_query_objects(query_dataset, query_radius)
 
-	query_radi = rand(0:query_radius, size(query_dataset, 2))
+	test_query_foci_index = sample(1:convert(Int64, floor(size(query_dataset,2)/2)), convert(Int64, floor(size(query_dataset,2)/2)), replace=false)
 
-	queries = Vector{Query}()
+	test_query_foci = Vector{Any}()
+	train_query_foci = Vector{Any}()
 
-	for i = 1:size(query_dataset, 2)
-		push!(queries, Query(query_dataset[:,i], query_radi[i]))
+	for i=1:size(query_dataset,2)
+		if i in test_query_foci_index
+			push!(test_query_foci, query_dataset[:,i])
+		else
+			push!(train_query_foci, query_dataset[:,i])
+		end
 	end
 
-	return queries
+
+	test_query_radi = rand(0:query_radius, size(test_query_foci, 1))
+
+	test_queries = Vector{Query}()
+
+	for i = 1:size(test_query_foci, 1)
+		push!(test_queries, Query(test_query_foci[i], test_query_radi[i]))
+	end
+
+	train_query_radi = rand(0:query_radius, size(train_query_foci, 1))
+
+	train_queries = Vector{Query}()
+
+	for i = 1:size(train_query_foci, 1)
+		push!(train_queries, Query(train_query_foci[i], train_query_radi[i]))
+	end
+
+	return test_queries, train_queries
 
 end
 
@@ -97,6 +132,7 @@ function make_base_tree(dataset)
 	end
 	return MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
 end
+
 
 
 function build_multi_ssstree(node)
@@ -408,6 +444,8 @@ function build_multi_ssstree_optimized(node, z, training_queries)
 end
 
 
+
+
 function find_range(query, queue, result, search_distance, comparisons)
 	tree = dequeue!(queue)
 	point = query.focus
@@ -468,6 +506,79 @@ function find_range(query, queue, result, search_distance, comparisons)
 end
 
 
+function find_range(query, queue_normal, queue_optimized, result, search_distance, comparisons)
+	w_tree = dequeue!(queue_optimized)
+	nw_tree = dequeue!(queue_normal)
+
+	point = query.focus
+	range = query.radius
+	query_dist = 0
+	if nw_tree.foci[1] == 0.0
+		for i = 1:size(nw_tree.children, 1)
+			enqueue!(queue_normal, nw_tree.children[i])
+			enqueue!(queue_optimized, w_tree.children[i])
+		end
+	else
+		nw_weighted_distance = 0
+		w_weighted_distance = 0
+		temp_distances = zeros(0)
+		if nw_tree.foci[1] == nw_tree.id 
+			for i = 1:size(nw_tree.foci,1)
+				distance = search_distance(nw_tree.foci[i], point)
+				push!(temp_distances, distance)
+				nw_weighted_distance += distance*nw_tree.weights[i]
+				w_weighted_distance += distance*w_tree.weights[i]
+				if nw_tree.id == nw_tree.foci[i]
+					query_dist = distance
+				end
+
+			end
+			global saved_distances = temp_distances
+		else
+			temp_distances = saved_distances
+			for i = 1:size(nw_tree.foci,1)
+				nw_weighted_distance += temp_distances[i]*nw_tree.weights[i]
+				w_weighted_distance += temp_distances[i]*w_tree.weights[i]
+				if nw_tree.id == nw_tree.foci[i]
+					query_dist = temp_distances[i]
+				end
+			end
+		end
+
+		if nw_tree.foci[size(nw_tree.foci,1)] == nw_tree.id
+			global saved_distances = zeros(0)
+		end
+
+		dist_to_query = query_dist
+
+		if dist_to_query - range <= 0
+			push!(result, nw_tree.id)
+		end
+
+		if nw_weighted_distance - nw_tree.radius > w_weighted_distance - w_tree.radius
+			dist_to_point = nw_weighted_distance
+			tree_radius = nw_tree.radius
+		else	
+			dist_to_point = w_weighted_distance
+			tree_radius = w_tree.radius
+		end
+
+
+		if dist_to_point <= range + tree_radius + TOLERANCE
+			for i = 1:size(nw_tree.children, 1)
+				enqueue!(queue_normal, nw_tree.children[i])
+				enqueue!(queue_optimized, w_tree.children[i])
+			end
+		end
+	end
+	if ! isempty(queue_normal)
+		find_range(query, queue_normal, queue_optimized, result, search_distance, comparisons)
+	else
+		return result, comparisons()
+	end
+end
+
+
 function find_range_linear_search(query, dataset, distance_function)
 	linear_search_distance, liner_search_comparisons = counter(distance_function)
 
@@ -497,6 +608,27 @@ function search_tree(query, tree, dataset, distance_function)
 
 end
 
+function search_tree(query, nw_tree, w_tree, dataset, distance_function)
+	search_distance, search_comparisons = counter(distance_function)
+
+	queue_normal = Queue{MultiFocalNode}()
+
+	enqueue!(queue_normal, nw_tree)
+
+	queue_optimized = Queue{MultiFocalNode}()
+
+	enqueue!(queue_optimized, w_tree)
+
+	result, comparisons = find_range(query, queue_normal, queue_optimized, Vector{Any}(), search_distance, search_comparisons)
+
+	linear_search_result, c = find_range_linear_search(query, dataset, distance_function)
+
+	@assert issetequal(Set(result), Set(linear_search_result))
+
+	return result, comparisons
+
+end
+
 function build_trees(dataset, training_queries)
 	
 	weigthed_base_tree = make_base_tree(dataset)
@@ -512,6 +644,7 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 
 	sum_comparisons_weighted = 0
 	sum_comparisons_non_weighted = 0
+	sum_comparisons_both = 0
 
 	all_comparisons_weighted = Vector{Float64}()
 
@@ -527,9 +660,12 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 
 		result_non_weighted, comparisons_non_weighted = search_tree(testing_queries[i], non_weighted_tree, dataset, distance_function)
 		result_weighted, comparisons_weighted = search_tree(testing_queries[i], weighted_tree, dataset, distance_function)
+		result_both, comparisons_both = search_tree(testing_queries[i], non_weighted_tree, weighted_tree, dataset, distance_function)
 
 		sum_comparisons_weighted += comparisons_weighted
 		sum_comparisons_non_weighted += comparisons_non_weighted
+		sum_comparisons_both += comparisons_both
+
 
 		push!(all_comparisons_non_weighted, comparisons_non_weighted)
 		push!(all_comparisons_weighted, comparisons_weighted)
@@ -542,17 +678,25 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 			result_var_bedre_eller_lik += 1
 		end
 
+		"""if size(result_weighted,1) > 0
+			println("reuslt er mer enn null ")
+			println(result_weighted)
+			println(result_non_weighted)
+		end"""
+
 	end
 
 	println(sum_comparisons_weighted/test_query_length)
 	println(sum_comparisons_non_weighted/test_query_length)
+	println(sum_comparisons_both/test_query_length)
 
 	println(result_var_bedre/test_query_length)
 	println(result_var_bedre_eller_lik/test_query_length)
 
+
 	#savefig(plot(1:test_query_length, [all_comparisons_non_weighted, all_comparisons_weighted], title="Comparisons",label=["Non weighted" "Weighted"]), "plot.png")
 
-	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length
+	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length, sum_comparisons_both/test_query_length
 end
 
 
@@ -562,13 +706,15 @@ function test_queries_dist_matrix(query_radius)
 
 	global distance_opt, comparisons_opt = counter(distance_from_matrix)
 
-	dataset = transpose(1:size(dist_matrix,1)/2)
+	dataset = transpose(1:floor(size(dist_matrix,1)*3/4))
 
-	query_dataset = transpose(1:size(dist_matrix,1))
+	query_dataset = floor(size(dist_matrix,1)/2):size(dist_matrix,1)
 
-	testing_queries = make_queries(query_dataset, 100, query_radius)
+	training_queries, testing_queries = make_queries(query_dataset, query_radius)
 
-	training_queries = make_queries(query_dataset, 100, query_radius)
+	#testing_queries = make_queries(query_dataset, 100, query_radius)
+
+	#training_queries = make_queries(query_dataset, 100, query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
@@ -576,31 +722,32 @@ function test_queries_dist_matrix(query_radius)
 	
 end
 
-function test_queries_gaussian(tree_size, query_radius, num_training_queries, dimention)
+function test_queries_gaussian(tree_size, query_radius, num_training_queries, dimension)
 
 	global distance,comparisons = counter(distance_euclidean)
 
 	global distance_opt, comparisons_opt = counter(distance_euclidean)
 
-	dataset, labeling, cluster_means = generate_gaussian_data(tree_size,dimention,10,100.0)
+	dataset, labeling, cluster_means = generate_gaussian_data(tree_size,dimension,4,100.0)
 
-	training_query_dataset, labeling, cluster_means = generate_gaussian_data(num_training_queries,dimention,4,100.0)
+	query_dataset, labeling, cluster_means = generate_gaussian_data(num_training_queries,dimension,3,50.0)
 
-	testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimention,2,100.0)
+	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimension,20,100.0)
 
-	testing_queries = make_query_objects(training_query_dataset, query_radius)
+	testing_queries, training_queries = make_query_objects(query_dataset, query_radius)
 
-	training_queries = make_query_objects(training_query_dataset, query_radius)
+	#training_queries = make_query_objects(training_query_dataset, query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
-	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
+	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, training_queries)
 	
 end
 
 function plot_diffferent_data_sizes()
 	w_results = Vector{Float64}()
 	nw_results = Vector{Float64}()
+	b_results = Vector{Float64}()
 
 	io_w = open("plot_latex_datasize_w.txt", "w")
 	io_nw = open("plot_latex_datasize_nw.txt", "w")
@@ -608,12 +755,13 @@ function plot_diffferent_data_sizes()
 
 
 	#for i=[1000,5000,10000,15000,20000]
-	for i=[100,150,200,250,300]
-		w_result, nw_result = test_queries_gaussian(i, 30, 200, 10)
+	for i=[1000,5000,7000,8000]
+		w_result, nw_result, b_result = test_queries_gaussian(i, 25, 1000, 5)
 		push!(w_results, w_result)
 		push!(nw_results, nw_result)
-		write(io_w, "($i,$w_result)")
-		write(io_nw, "($i,$nw_result)")
+		push!(b_results, b_result)
+		#write(io_w, "($i,$w_result)")
+		#write(io_nw, "($i,$nw_result)")
 	end
 
 	close(io_nw)
@@ -621,8 +769,11 @@ function plot_diffferent_data_sizes()
 
 	println(w_results)
 	println(nw_results)
+	println(b_results)
 
-	#savefig(plot([1000,5000,10000,15000,20000], [nw_results, w_results], title="Comparisons",label=["Non weighted" "Weighted"]), "plot_datasize.png")
+	relation = b_results ./ nw_results
+
+	savefig(plot([1000,5000,10000,20000], [relation], title="Comparisons",label=["Relation"]), "plot_datasize.png")
 
 
 end
