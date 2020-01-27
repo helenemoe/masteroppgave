@@ -121,5 +121,29 @@ end
 
 print(find_node(6, tree))
 
+result = zeros(0)
+function find_range(point, range, tree)
+	if tree.point == 0.0
+		for i = 1:size(tree.children, 1)
+			find_range(point, range, tree.children[i])
+		end
+	else
 
-#print(dist_matrix[1,1])
+		dist_to_point = dist_matrix[convert(Int64, tree.point), convert(Int64, point)]
+		if dist_to_point - range <= 0
+			push!(result, tree.point)
+		end
+		if dist_to_point < range + tree.radius
+			for i = 1:size(tree.children, 1)
+				find_range(point, range, tree.children[i])
+			end
+		end
+	end
+end
+
+find_range(2,2, tree)
+
+print(result)
+
+	
+
