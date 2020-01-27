@@ -1,7 +1,7 @@
 using DelimitedFiles
-#dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
+dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
-dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
+#dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
 
 #M = maximum(dist_matrix)
 #a = 0.4
@@ -16,7 +16,7 @@ end
 
 function build_ssstree(node)
 
-	if size(node.pot_children,1) < 1
+	if size(node.pot_children,1) < 50
 		node.children = node.pot_children
 		node.pot_children = Vector{Node}()
 		node
@@ -86,8 +86,8 @@ end
 
 
 chrom_node = Vector{Node}()
-#for i = 1:4200
-for i = 1:7
+for i = 1:4200
+#for i = 1:7
 	push!(chrom_node, Node(i, Vector{Node}(), Vector{Node}(), 0))
 
 end
@@ -122,6 +122,8 @@ end
 print(find_node(6, tree))
 
 result = zeros(0)
+comparisons = 0
+
 function find_range(point, range, tree)
 	if tree.point == 0.0
 		for i = 1:size(tree.children, 1)
@@ -131,9 +133,11 @@ function find_range(point, range, tree)
 
 		dist_to_point = dist_matrix[convert(Int64, tree.point), convert(Int64, point)]
 		if dist_to_point - range <= 0
+			global comparisons = comparisons + 1
 			push!(result, tree.point)
 		end
 		if dist_to_point < range + tree.radius
+			global comparisons = comparisons + 1
 			for i = 1:size(tree.children, 1)
 				find_range(point, range, tree.children[i])
 			end
@@ -141,9 +145,13 @@ function find_range(point, range, tree)
 	end
 end
 
-find_range(2,2, tree)
+find_range(1,30, tree)
 
 print(result)
+
+print("antall sammenligninger \n")
+print(comparisons)
+
 
 	
 
