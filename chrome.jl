@@ -37,8 +37,6 @@ function build_ssstree(node)
 			node.radius = 100000
 		else
 			for i = 1:size(list,1)
-				print(dist_matrix[convert(Int64, node.point), convert(Int64, list[i].point)])
-				print("\n")
 				if dist_matrix[convert(Int64, node.point), convert(Int64, list[i].point)] > radius
 					radius = dist_matrix[convert(Int64, node.point), convert(Int64, list[i].point)]
 				end
@@ -94,9 +92,48 @@ for i = 1:7
 
 end
 
-print(build_ssstree(Node(0,chrom_node, Vector{Node}(), 0)))
+tree = build_ssstree(Node(0,chrom_node, Vector{Node}(), 0))
 #result = build_ssstree(Node(0,chrom_node, Vector{Node}(), 0))
 #print(size(result.children,1))
+
+function find_node(point, tree)
+	if tree.point == point
+		return 1
+	else
+		if size(dist_matrix,1) < point
+			return 0
+		end
+		for i = 1:size(tree.children, 1)
+			dist_to_point = dist_matrix[convert(Int64, tree.children[i].point), convert(Int64, point)]
+
+
+			print("point")
+			print(tree.children[i].point)
+			print("\n")
+
+			print("\n radius ")
+			print(tree.children[i].radius)
+			print("\n dist")
+			print(dist_to_point)
+
+			if dist_to_point <= tree.children[i].radius
+				result = find_node(point, tree.children[i])
+				print("\ndette er result: ")
+				print(result)
+				print("\n")
+				if result == 1
+					return result
+					print("hei")
+				end
+			end
+		end
+		print("lolo")
+		return 0
+	end
+end
+
+
+print(find_node(6, tree))
 
 
 #print(dist_matrix[1,1])
