@@ -14,6 +14,13 @@ mutable struct Node
     radius :: Float64
 end
 
+mutable struct MultiFocalNode
+    foci        :: Vector{Float64}
+    children :: Vector{MultiFocalNode}
+    radius :: Float64
+    weights :: Vector{Float64}
+end
+
 function build_ssstree(node)
 
 	if size(node.pot_children,1) < 50
@@ -152,6 +159,28 @@ print(result)
 print("antall sammenligninger \n")
 print(comparisons)
 
+multi_focal_tree = MultiFocalNode(zeros(0), Vector{MultiFocalNode}(), 0, zeros(0))
+function make_ambit_tree(tree)
+	foci = zeros(0)
+	for i = 1: size(tree.children,1)
+		push!(foci, tree.children[i].point)
+	end
+	for i = 1: size(tree.children,1)
+		weights = zeros(0)
+		for j = 1:size(foci,1)
+			if j == i
+				push!(weights,1)
+			else
+				push!(weights,0)
+			end
+		end
+		mfn = MultiFocalNode(foci, Vector{MultiFocalNode}(),  tree.children[i].radius, weights)
+		push!(multi_focal_tree.children, mfn)
+	end
+end
+
+make_ambit_tree(tree)
+print(multi_focal_tree)
 
 	
 
