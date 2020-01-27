@@ -106,28 +106,14 @@ function find_node(point, tree)
 		for i = 1:size(tree.children, 1)
 			dist_to_point = dist_matrix[convert(Int64, tree.children[i].point), convert(Int64, point)]
 
-
-			print("point")
-			print(tree.children[i].point)
-			print("\n")
-
-			print("\n radius ")
-			print(tree.children[i].radius)
-			print("\n dist")
-			print(dist_to_point)
-
 			if dist_to_point <= tree.children[i].radius
 				result = find_node(point, tree.children[i])
-				print("\ndette er result: ")
-				print(result)
-				print("\n")
+
 				if result == 1
 					return result
-					print("hei")
 				end
 			end
 		end
-		print("lolo")
 		return 0
 	end
 end
