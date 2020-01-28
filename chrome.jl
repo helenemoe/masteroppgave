@@ -1,7 +1,7 @@
 using DelimitedFiles
-dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
+#dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
-#dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
+dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
 
 #M = maximum(dist_matrix)
 #a = 0.4
@@ -99,7 +99,7 @@ for i = 1:4200
 
 end
 
-tree = build_ssstree(Node(0,chrom_node, Vector{Node}(), 0))
+#tree = build_ssstree(Node(0,chrom_node, Vector{Node}(), 0))
 #result = build_ssstree(Node(0,chrom_node, Vector{Node}(), 0))
 #print(size(result.children,1))
 
@@ -126,7 +126,7 @@ function find_node(point, tree)
 end
 
 
-print(find_node(6, tree))
+#print(find_node(6, tree))
 
 result = zeros(0)
 comparisons = 0
@@ -152,14 +152,14 @@ function find_range(point, range, tree)
 	end
 end
 
-find_range(1,30, tree)
+#find_range(1,30, tree)
 
-print(result)
+#print(result)
 
-print("antall sammenligninger \n")
-print(comparisons)
+#print("antall sammenligninger \n")
+#print(comparisons)
 
-multi_focal_tree = MultiFocalNode(zeros(0), Vector{MultiFocalNode}(), 0, zeros(0))
+#multi_focal_tree = MultiFocalNode(zeros(0), Vector{MultiFocalNode}(), 0, zeros(0))
 function make_ambit_tree(tree)
 	foci = zeros(0)
 	for i = 1: size(tree.children,1)
@@ -179,8 +179,132 @@ function make_ambit_tree(tree)
 	end
 end
 
-make_ambit_tree(tree)
-print(multi_focal_tree)
+#make_ambit_tree(tree)
+#print(multi_focal_tree)
+
+function build_multi_ssstree(node)
+
+	#if size(node.children,1) < 50
+	if size(node.children,1) < 1
+		node
+	else
+
+		list = node.children
+		max = 0
+		for x = 1:size(list,1) 
+			for y = 1:size(list,1) 
+				if dist_matrix[convert(Int64,list[x].foci[1]),convert(Int64,list[y].foci[1])]>max
+					max = dist_matrix[convert(Int64,list[x].foci[1]),convert(Int64,list[y].foci[1])]
+				end
+			end
+		end
+		Ma = 0.4*max
+		#Ma = max
+		radius = 0
+		if node.foci[1] == 0
+			node.radius = 100000
+		else
+			node_index = 1
+			for i=1:size(node.foci,1)
+				if node.weights[i] == 1
+					node_index = i
+				end
+			end
+			for i = 1:size(list,1)
+				if dist_matrix[convert(Int64, node.foci[node_index]), convert(Int64, list[i].foci[1])] > radius
+					radius = dist_matrix[convert(Int64, node.foci[node_index]), convert(Int64, list[i].foci[1])]
+				end
+			end
+			node.radius = radius
+		end
+
+		children_list = Vector{MultiFocalNode}()
+		first_node = list[1]
+		push!( children_list, first_node )
+
+		add_new = 1
+
+		for x = 2:size(list,1)
+			nodex = list[x]
+			add_new = 1
+			for y = 1:size(children_list,1)
+				nodey = children_list[y]
+				
+				dist = dist_matrix[convert(Int64, nodey.foci[1]), convert(Int64, nodex.foci[1])]
+
+				if dist < Ma
+
+					push!(children_list[y].children, nodex)
+					add_new = 0
+					break
+				end
+			end
+			if  add_new == 1
+				new_node = nodex
+				push!( children_list, new_node )
+			end
+			
+		end
+
+		foci = zeros(0)
+		for i = 1: size(children_list,1)
+			push!(foci, children_list[i].foci[1])
+		end
+
+		for i = 1: size(children_list,1)
+			weights = zeros(0)
+			for j = 1:size(foci,1)
+				if j == i
+					push!(weights,1)
+				else
+					push!(weights,0)
+				end
+			end
+			children_list[i].foci = foci
+			children_list[i].weights = weights
+		end
+
+		node.children = Vector{MultiFocalNode}()
+
+		for i = 1:size(children_list,1)
+			push!(node.children, build_multi_ssstree(children_list[i]))
+		end
+
+		node
+
+	end
+end
+
+multi_sss_children = Vector{MultiFocalNode}()
+#for i = 1:4200
+for i = 1:7
+	push!(multi_sss_children, MultiFocalNode([i], Vector{MultiFocalNode}(), 0, zeros(0)))
+
+end
+
+multi_sss_test_tree = MultiFocalNode([0],multi_sss_children, 0, zeros(0))
+
+test_tree = build_multi_ssstree(multi_sss_test_tree)
+
+function print_tree(tree)
+	for i=1:size(tree.children,1)
+		print(tree.children[i].foci)
+		print(tree.children[i].weights)
+		print(" radius: ")
+		print(tree.children[i].radius)
+		if tree.children[i].radius == 0
+			print("\n")
+		end
+		print("\n children: ")
+		print_tree(tree.children[i])
+
+	end
+end
+
+print_tree(test_tree)
+
+print(test_tree)
+
 
 	
 
