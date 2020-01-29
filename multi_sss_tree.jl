@@ -1,4 +1,6 @@
 using DelimitedFiles
+
+using DataStructures
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
 #dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
@@ -158,19 +160,13 @@ multi_sss_children = Vector{MultiFocalNode}()
 for i = 1:4200
 #for i = 1:7
 	push!(multi_sss_children, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
-	for j = 1:4200
-		calculated_distances[i,j] = -1 
-	end
+
 end
-
-println(calculated_distances[1:10,1:10])
-
 
 multi_sss_test_tree = MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
 
 test_tree = build_multi_ssstree(multi_sss_test_tree)
 
-println(calculated_distances[1:10,1:10])
 
 function print_tree(tree)
 	for i=1:size(tree.children,1)
@@ -195,33 +191,53 @@ search_distance, search_comparisons = counter(distance_from_matrix)
 
 result = zeros(0)
 
+saved_distances = zeros(0)
 
-function find_range(point, range, tree)
+queue = Queue{MultiFocalNode}()
+
+enqueue!(queue, test_tree)
+
+function find_range(point, range, queue)
+	tree = dequeue!(queue)
 	if tree.foci[1] == 0.0
 		for i = 1:size(tree.children, 1)
-			find_range(point, range, tree.children[i])
+			enqueue!(queue, tree.children[i])
 		end
 	else
 		weighted_distance = 0
-		for i = 1:size(tree.foci,1)
-			if distance_from_calculated(tree.foci[i], point) == 1
-				weighted_distance += calculated_distances[convert(Int64,tree.foci[i]), convert(Int64, point)]*tree.weights[i]
-			else
-				weighted_distance += search_distance(tree.foci[i], point)*tree.weights[i]
+		temp_distances = zeros(0)
+		if tree.foci[1] == tree.id 
+			for i = 1:size(tree.foci,1)
+				distance = search_distance(tree.foci[i], point)
+				push!(temp_distances, distance)
+				weighted_distance += distance*tree.weights[i]
+
+			end
+			global saved_distances = temp_distances
+		else
+			temp_distances = saved_distances
+			for i = 1:size(tree.foci,1)
+				weighted_distance += temp_distances[i]*tree.weights[i]
 			end
 		end
 
-		dist_to_point = weighted_distance
+		if tree.foci[size(tree.foci,1)] == tree.id
+			global saved_distances = zeros(0)
+		end
 
+		dist_to_point = weighted_distance
 
 		if dist_to_point - range <= 0
 			push!(result, tree.id)
 		end
 		if dist_to_point < range + tree.radius
 			for i = 1:size(tree.children, 1)
-				find_range(point, range, tree.children[i])
+				enqueue!(queue, tree.children[i])
 			end
 		end
+	end
+	if ! isempty(queue)
+		find_range(point, range, queue)
 	end
 end
 
@@ -231,7 +247,7 @@ for i = 1:4200
 	end
 end
 
-find_range(2.0,30.0,test_tree)
+find_range(2.0,30.0, queue)
 
 println(result)
 
