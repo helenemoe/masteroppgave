@@ -3,7 +3,7 @@ dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
 #dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
 
-
+calculated_distances = zeros(Float64, 4200, 4200)
 function counter(f)
 	count = 0
 
@@ -15,14 +15,26 @@ function counter(f)
 	return mapping, extract
 end
 
+function distance_from_calculated(x,y)
+	#print(calculated_distances[convert(Int64, x), convert(Int64, y)])
+	if calculated_distances[convert(Int64, x), convert(Int64, y)] < 0.0
+		return 0
+	else
+		return 1
+	end
+end
+
 function distance_from_matrix(x, y)
-	return dist_matrix[convert(Int64, x), convert(Int64, y)]
+	distance = dist_matrix[convert(Int64, x), convert(Int64, y)]
+	calculated_distances[convert(Int64, x), convert(Int64, y)] = distance
+	return distance
 end
 
 distance,comparisons = counter(distance_from_matrix)
 
 
 mutable struct MultiFocalNode
+	id 		:: Int64
     foci        :: Vector{Float64}
     children :: Vector{MultiFocalNode}
     radius :: Float64
@@ -145,13 +157,20 @@ end
 multi_sss_children = Vector{MultiFocalNode}()
 for i = 1:4200
 #for i = 1:7
-	push!(multi_sss_children, MultiFocalNode([i], Vector{MultiFocalNode}(), 0, zeros(0)))
-
+	push!(multi_sss_children, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
+	for j = 1:4200
+		calculated_distances[i,j] = -1 
+	end
 end
 
-multi_sss_test_tree = MultiFocalNode([0],multi_sss_children, 0, zeros(0))
+println(calculated_distances[1:10,1:10])
+
+
+multi_sss_test_tree = MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
 
 test_tree = build_multi_ssstree(multi_sss_test_tree)
+
+println(calculated_distances[1:10,1:10])
 
 function print_tree(tree)
 	for i=1:size(tree.children,1)
@@ -176,29 +195,39 @@ search_distance, search_comparisons = counter(distance_from_matrix)
 
 result = zeros(0)
 
+
 function find_range(point, range, tree)
 	if tree.foci[1] == 0.0
 		for i = 1:size(tree.children, 1)
 			find_range(point, range, tree.children[i])
 		end
 	else
-		tree_point = 1
+		weighted_distance = 0
 		for i = 1:size(tree.foci,1)
-			if tree.weights[i] == 1
-				tree_point = tree.foci[i]
+			if distance_from_calculated(tree.foci[i], point) == 1
+				weighted_distance += calculated_distances[convert(Int64,tree.foci[i]), convert(Int64, point)]*tree.weights[i]
+			else
+				weighted_distance += search_distance(tree.foci[i], point)*tree.weights[i]
 			end
-
 		end
 
-		dist_to_point = search_distance(tree_point, point)
+		dist_to_point = weighted_distance
+
+
 		if dist_to_point - range <= 0
-			push!(result, tree_point)
+			push!(result, tree.id)
 		end
 		if dist_to_point < range + tree.radius
 			for i = 1:size(tree.children, 1)
 				find_range(point, range, tree.children[i])
 			end
 		end
+	end
+end
+
+for i = 1:4200
+	for j = 1:4200
+		calculated_distances[i,j] = -1 
 	end
 end
 
