@@ -5,7 +5,6 @@ dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
 #dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
 
-calculated_distances = zeros(Float64, 4200, 4200)
 function counter(f)
 	count = 0
 
@@ -17,18 +16,9 @@ function counter(f)
 	return mapping, extract
 end
 
-function distance_from_calculated(x,y)
-	#print(calculated_distances[convert(Int64, x), convert(Int64, y)])
-	if calculated_distances[convert(Int64, x), convert(Int64, y)] < 0.0
-		return 0
-	else
-		return 1
-	end
-end
 
 function distance_from_matrix(x, y)
 	distance = dist_matrix[convert(Int64, x), convert(Int64, y)]
-	calculated_distances[convert(Int64, x), convert(Int64, y)] = distance
 	return distance
 end
 
@@ -132,6 +122,15 @@ function build_multi_ssstree(node)
 			push!(foci, children_list[i].foci[1])
 		end
 
+		X = zeros(Float64, size(foci,1), size(node.children,1))
+
+		for i=1:size(foci,1)
+			for j=1:size(node.children, 1)
+				X[i,j] = distance(foci[i], node.children[j].id)	
+			end
+		end
+		
+
 		for i = 1: size(children_list,1)
 			weights = zeros(0)
 			for j = 1:size(foci,1)
@@ -144,6 +143,8 @@ function build_multi_ssstree(node)
 			children_list[i].foci = foci
 			children_list[i].weights = weights
 		end
+		
+	
 
 		node.children = Vector{MultiFocalNode}()
 
@@ -238,12 +239,6 @@ function find_range(point, range, queue)
 	end
 	if ! isempty(queue)
 		find_range(point, range, queue)
-	end
-end
-
-for i = 1:4200
-	for j = 1:4200
-		calculated_distances[i,j] = -1 
 	end
 end
 
