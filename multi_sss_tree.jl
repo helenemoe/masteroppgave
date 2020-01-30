@@ -31,6 +31,10 @@ end
 
 distance,comparisons = counter(distance_from_matrix)
 
+mutable struct Query
+	focus :: Float64
+	radius :: Float64
+end
 
 mutable struct MultiFocalNode
 	id 		:: Int64
@@ -40,10 +44,7 @@ mutable struct MultiFocalNode
     weights :: Vector{Float64}
 end
 
-mutable struct Query
-	focus :: Float64
-	radius :: Float64
-end
+
 
 N = 4200
 
@@ -201,48 +202,67 @@ multi_sss_test_tree = MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
 
 function find_weights_LP(x, z)
 
+	#print(z)
+
 	model = Model(with_optimizer(GLPK.Optimizer))
 
-	number_of_foci = size(z,2)
+	number_of_foci = size(z,1)
+
+	#println(number_of_foci)
+
+	#println(size(x))
+
 
 	ONES = ones(number_of_foci)
 
-	@variable(model, u[1:number_of_foci] >= 0)
-	@variable(model, v[1:number_of_foci] >= 0)
+	#println(size(ONES))
+
+	@variable(model, u[1,1:number_of_foci] >= 0)
+	@variable(model, v[1,1:number_of_foci] >= 0)
 	@variable(model, r)
 
-	@objective(model, Max, sum(u'z) - sum(v'z) - r)
-	@constraint(model, sum(u'ONES) + sum(v'ONES) == 1)
-	#@constraint(model, x*u - x*v .-r .<= 0)
-	@constraint(model, x*u .<= 0)
+	@objective(model, Max, sum(u*z) - sum(v*z) - r)
+	@constraint(model, sum(u*ONES) + sum(v*ONES) == 1)
+	@constraint(model, u*x - v*x .-r .<= 0)
 
-	print(model)
+	#print(model)
 
     JuMP.optimize!(model)
 
     obj_value = JuMP.objective_value(model)
-    u_value = JuMP.value(u)
-    v_value = JuMP.value(v)
+    u_value = JuMP.value.(u)
+    v_value = JuMP.value.(v)
     r_value = JuMP.value(r)
-
+"""
     println("Objective value: ", obj_value)
     println("u = ", u_value)
     println("v = ", v_value)
     println("r = ", r_value)
+    """
+    a = zeros(0)
+
+    println(size(u_value))
+
+    for i = 1:size(u_value, 2)
+    	push!(a, u_value[1,i]- v_value[1,i])
+    end
+    
+
+    return a, r_value
 
 end	
 
-x = [0 1 2 3 4 5 6; 1 0 1 2 3 4 5; 2 1 0 1 2 3 4; 3 2 1 0 1 2 3; 4 3 2 1 0 1 2; 5 4 3 2 1 0 1; 6 5 4 3 2 1 0]
+#x = [0 1 2 3 4 5 6; 1 0 1 2 3 4 5; 2 1 0 1 2 3 4; 3 2 1 0 1 2 3; 4 3 2 1 0 1 2; 5 4 3 2 1 0 1; 6 5 4 3 2 1 0]
 
-z = [0 1 2 3 4 5 6]
+#z = [0 1 2 3 4 5 6]
 
-find_weights_LP(x, z)
+#find_weights_LP(x, z)
 
 function build_multi_ssstree_optimized(node, z)
 
 	if size(node.children,1) < 50
 	#if size(node.children,1) < 1
-
+		"""
 		foci = zeros(0)
 		for i = 1: size(node.children,1)
 			push!(foci, node.children[i].foci[1])
@@ -260,6 +280,7 @@ function build_multi_ssstree_optimized(node, z)
 			node.children[i].foci = foci
 			node.children[i].weights = weights
 		end
+		"""
 		node
 	else
 
@@ -278,7 +299,8 @@ function build_multi_ssstree_optimized(node, z)
 		radius = 0
 		if node.foci[1] == 0
 			node.radius = 100000
-		else
+			node.weights = [1]
+		"""else
 			node_index = 1
 			for i=1:size(node.foci,1)
 				if node.weights[i] == 1
@@ -292,6 +314,7 @@ function build_multi_ssstree_optimized(node, z)
 				end
 			end
 			node.radius = radius
+			"""
 		end
 
 		children_list = Vector{MultiFocalNode}()
@@ -336,11 +359,16 @@ function build_multi_ssstree_optimized(node, z)
 				end
 			end
 
-
+			println(node.foci)
+			println(z)
+			optimized_weights, r = find_weights_LP(X, z)
+			node.weights = optimized_weights
+			node.radius = r
 		end
 
 
-		Z = zeros(Float64, size(foci,1))
+
+		Z = zeros(0)
 
 		for i=1:size(foci,1)
 			sum_dist = 0
@@ -354,16 +382,8 @@ function build_multi_ssstree_optimized(node, z)
 		
 
 		for i = 1: size(children_list,1)
-			weights = zeros(0)
-			for j = 1:size(foci,1)
-				if j == i
-					push!(weights,1)
-				else
-					push!(weights,0)
-				end
-			end
 			children_list[i].foci = foci
-			children_list[i].weights = weights
+			#children_list[i].weights = weights
 		end
 		
 	
@@ -399,8 +419,9 @@ end
 
 z_test = Vector{Float64}()
 
-#test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
+test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
 
+print_tree(test_tree_opt)
 
 #print_tree(test_tree)
 
