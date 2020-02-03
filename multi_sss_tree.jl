@@ -4,13 +4,17 @@ using DataStructures
 
 using Random
 
-using JuMP, GLPK
+using JuMP, Clp
 
 Random.seed!(0)
 
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
+N = 4200
+
 #dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
+
+#dist_matrix_test = dist_matrix[1:3,1:3]
 
 function counter(f)
 	count = 0
@@ -46,9 +50,10 @@ end
 
 
 
-N = 4200
+
 
 TEST_QUERY_LENGTH = 100
+
 
 
 test_query_foci = rand(1:N, TEST_QUERY_LENGTH)
@@ -61,8 +66,6 @@ for i = 1:TEST_QUERY_LENGTH
 	push!(test_queries, Query(test_query_foci[i], test_query_radi[i]))
 end
 
-
-#println(test_queries)
 
 function build_multi_ssstree(node)
 
@@ -189,7 +192,7 @@ function build_multi_ssstree(node)
 end
 
 multi_sss_children = Vector{MultiFocalNode}()
-for i = 1:N
+for i = 1:N/2
 #for i = 1:7
 	push!(multi_sss_children, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
 
@@ -200,57 +203,48 @@ multi_sss_test_tree = MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
 #test_tree = build_multi_ssstree(multi_sss_test_tree)
 
 
-function find_weights_LP(x, z)
+function coeff(PF, QF)
 
-	#print(z)
+    mod = Model(with_optimizer(Clp.Optimizer, LogLevel = 0))
+    PF = transpose(PF)
+    n, m = size(PF)
+    k = 1
 
-	model = Model(with_optimizer(GLPK.Optimizer))
+    AvgQF = QF
 
-	number_of_foci = size(z,1)
+    @variable(mod, u[1:k,1:m] ≥ 0)
+    @variable(mod, v[1:k,1:m] ≥ 0)
+    @variable(mod, r[1:k])
 
-	#println(number_of_foci)
+    # Maximize the sum of lower bounds. As the facets are independent, this
+    # will optimize the components individually.
 
-	#println(size(x))
+    @objective(mod, Max,
+        sum(
+            sum(AvgQF[i] * (u[f,i] - v[f,i]) for i = 1:m) - r[f]
+        for f = 1:k)
+    )
 
-
-	ONES = ones(number_of_foci)
-
-	#println(size(ONES))
-
-	@variable(model, u[1,1:number_of_foci] >= 0)
-	@variable(model, v[1,1:number_of_foci] >= 0)
-	@variable(model, r)
-
-	@objective(model, Max, sum(u*z) - sum(v*z) - r)
-	@constraint(model, sum(u*ONES) + sum(v*ONES) == 1)
-	@constraint(model, u*x - v*x .-r .<= 0)
-
-	#print(model)
-
-    JuMP.optimize!(model)
-
-    obj_value = JuMP.objective_value(model)
-    u_value = JuMP.value.(u)
-    v_value = JuMP.value.(v)
-    r_value = JuMP.value(r)
-"""
-    println("Objective value: ", obj_value)
-    println("u = ", u_value)
-    println("v = ", v_value)
-    println("r = ", r_value)
-    """
-    a = zeros(0)
-
-    println(size(u_value))
-
-    for i = 1:size(u_value, 2)
-    	push!(a, u_value[1,i]- v_value[1,i])
+    for f = 1:k, i = 1:n
+        @constraint(mod, sum(PF[i,j] * (u[f,j] - v[f,j]) for j = 1:m) ≤ r[f])
     end
-    
 
-    return a, r_value
+    for f = 1:k
+        @constraint(mod, sum(u[f,i] + v[f,i] for i = 1:m) == 1)
+    end
 
-end	
+
+
+    optimize!(mod)
+
+    rad = [value(r[i]) for i=1:k]
+    wts = [value(u[f,i]) - value(v[f,i]) for f=1:k, i=1:m]
+
+
+
+    return wts, rad[1]
+
+end
 
 #x = [0 1 2 3 4 5 6; 1 0 1 2 3 4 5; 2 1 0 1 2 3 4; 3 2 1 0 1 2 3; 4 3 2 1 0 1 2; 5 4 3 2 1 0 1; 6 5 4 3 2 1 0]
 
@@ -262,7 +256,18 @@ function build_multi_ssstree_optimized(node, z)
 
 	if size(node.children,1) < 50
 	#if size(node.children,1) < 1
-		"""
+
+		X = zeros(Float64, size(node.foci,1), size(node.children,1))
+
+		for i=1:size(node.foci,1)
+			for j=1:size(node.children, 1)
+				X[i,j] = distance(node.foci[i], node.children[j].id)	
+			end
+		end
+		optimized_weights, r = coeff(X, z)
+		node.weights = vec(optimized_weights)
+		node.radius = r
+
 		foci = zeros(0)
 		for i = 1: size(node.children,1)
 			push!(foci, node.children[i].foci[1])
@@ -280,7 +285,6 @@ function build_multi_ssstree_optimized(node, z)
 			node.children[i].foci = foci
 			node.children[i].weights = weights
 		end
-		"""
 		node
 	else
 
@@ -358,11 +362,8 @@ function build_multi_ssstree_optimized(node, z)
 					X[i,j] = distance(node.foci[i], node.children[j].id)	
 				end
 			end
-
-			println(node.foci)
-			println(z)
-			optimized_weights, r = find_weights_LP(X, z)
-			node.weights = optimized_weights
+			optimized_weights, r = coeff(X, z)
+			node.weights = vec(optimized_weights)
 			node.radius = r
 		end
 
@@ -370,13 +371,14 @@ function build_multi_ssstree_optimized(node, z)
 
 		Z = zeros(0)
 
+
 		for i=1:size(foci,1)
 			sum_dist = 0
 			for j=1:TEST_QUERY_LENGTH
-				sum_dist += distance(foci[i], test_queries[j].focus)
+				sum_dist += distance(foci[i], test_queries[j].focus) - test_queries[j].radius
 			end
 			avg_dist = sum_dist/TEST_QUERY_LENGTH
-			push!(Z,avg_dist)
+			push!(Z, avg_dist)
 		end
 
 		
@@ -391,7 +393,6 @@ function build_multi_ssstree_optimized(node, z)
 		node.children = Vector{MultiFocalNode}()
 
 
-
 		for i = 1:size(children_list,1)
 			push!(node.children, build_multi_ssstree_optimized(children_list[i], Z))
 		end
@@ -404,15 +405,14 @@ end
 
 function print_tree(tree)
 	for i=1:size(tree.children,1)
-		print(tree.children[i].foci)
-		print(tree.children[i].weights)
-		print(" radius: ")
-		print(tree.children[i].radius)
-		if tree.children[i].radius == 0
-			print("\n")
+		if tree.children[i].radius != 0
+			print(tree.children[i].foci)
+			print(tree.children[i].weights)
+			print(" radius: ")
+			print(tree.children[i].radius)
+			println("Children")
+			print_tree(tree.children[i])
 		end
-		print("\n children: ")
-		print_tree(tree.children[i])
 
 	end
 end
@@ -421,7 +421,7 @@ z_test = Vector{Float64}()
 
 test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
 
-print_tree(test_tree_opt)
+#print_tree(test_tree_opt)
 
 #print_tree(test_tree)
 
@@ -435,7 +435,7 @@ saved_distances = zeros(0)
 
 queue = Queue{MultiFocalNode}()
 
-#enqueue!(queue, test_tree)
+enqueue!(queue, test_tree_opt)
 
 function find_range(query, queue)
 	tree = dequeue!(queue)
@@ -483,8 +483,8 @@ function find_range(query, queue)
 	end
 end
 
-#find_range(test_queries[5], queue)
+find_range(test_queries[5], queue)
 
-#println(result)
+println(result)
 
-#println(search_comparisons())
+println(search_comparisons())
