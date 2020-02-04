@@ -39,6 +39,8 @@ end
 
 distance,comparisons = counter(distance_from_matrix)
 
+distance_opt, comparisons_opt = counter(distance_from_matrix)
+
 mutable struct Query
 	focus :: Float64
 	radius :: Float64
@@ -94,7 +96,6 @@ function build_multi_ssstree(node)
 			node.children[i].weights = weights
 		end
 		radius = 0
-		print(node.id)
 		for i=1:size(node.children,1)
 			dist = distance(node.id, node.children[i].id)
 			if dist > radius
@@ -205,13 +206,17 @@ function build_multi_ssstree(node)
 end
 
 multi_sss_children = Vector{MultiFocalNode}()
+multi_sss_children_OPT = Vector{MultiFocalNode}()
 for i = 1:N/2
 #for i = 1:7
 	push!(multi_sss_children, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
+	push!(multi_sss_children_OPT, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
 
 end
 
 multi_sss_test_tree = MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
+
+msst_OPT = MultiFocalNode(0,[0],multi_sss_children_OPT, 0, zeros(0))
 
 #test_tree = build_multi_ssstree(multi_sss_test_tree)
 
@@ -276,7 +281,7 @@ function build_multi_ssstree_optimized(node, z)
 
 		for i=1:size(node.foci,1)
 			for j=1:size(node.children, 1)
-				X[i,j] = distance(node.foci[i], node.children[j].id)	
+				X[i,j] = distance_opt(node.foci[i], node.children[j].id)	
 			end
 		end
 		optimized_weights, r = coeff(X, z)
@@ -307,7 +312,7 @@ function build_multi_ssstree_optimized(node, z)
 		max = 0
 		for x = 1:size(list,1) 
 			for y = 1:size(list,1)
-				dist =  distance(list[x].foci[1], list[y].foci[1])
+				dist =  distance_opt(list[x].foci[1], list[y].foci[1])
 				if dist>max
 					max = dist
 				end
@@ -319,21 +324,6 @@ function build_multi_ssstree_optimized(node, z)
 		if node.foci[1] == 0
 			node.radius = 100000
 			node.weights = [1]
-		"""else
-			node_index = 1
-			for i=1:size(node.foci,1)
-				if node.weights[i] == 1
-					node_index = i
-				end
-			end
-			for i = 1:size(list,1)
-				dist = distance(node.foci[node_index], list[i].foci[1])
-				if dist > radius
-					radius = dist
-				end
-			end
-			node.radius = radius
-			"""
 		end
 
 		children_list = Vector{MultiFocalNode}()
@@ -348,7 +338,7 @@ function build_multi_ssstree_optimized(node, z)
 			for y = 1:size(children_list,1)
 				nodey = children_list[y]
 				
-				dist = distance(nodey.foci[1], nodex.foci[1])
+				dist = distance_opt(nodey.foci[1], nodex.foci[1])
 
 				if dist < Ma
 
@@ -374,7 +364,7 @@ function build_multi_ssstree_optimized(node, z)
 
 			for i=1:size(node.foci,1)
 				for j=1:size(node.children, 1)
-					X[i,j] = distance(node.foci[i], node.children[j].id)	
+					X[i,j] = distance_opt(node.foci[i], node.children[j].id)	
 				end
 			end
 			optimized_weights, r = coeff(X, z)
@@ -383,14 +373,13 @@ function build_multi_ssstree_optimized(node, z)
 		end
 
 
-
 		Z = zeros(0)
 
 
 		for i=1:size(foci,1)
 			sum_dist = 0
 			for j=1:TEST_QUERY_LENGTH
-				sum_dist += distance(foci[i], test_queries[j].focus) - test_queries[j].radius
+				sum_dist += distance_opt(foci[i], test_queries[j].focus) - test_queries[j].radius
 			end
 			avg_dist = sum_dist/TEST_QUERY_LENGTH
 			push!(Z, avg_dist)
@@ -434,9 +423,11 @@ end
 
 z_test = Vector{Float64}()
 
+
+
 test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
 
-#test_tree = build_multi_ssstree(multi_sss_test_tree)
+test_tree = build_multi_ssstree(msst_OPT)
 
 #print_tree(test_tree_opt)
 
@@ -452,13 +443,13 @@ saved_distances = zeros(0)
 
 queue = Queue{MultiFocalNode}()
 
-enqueue!(queue, test_tree_opt)
-count = 0
+enqueue!(queue, test_tree)
 
 function find_range(query, queue, result)
 	tree = dequeue!(queue)
 	point = query.focus
 	range = query.radius
+	query_dist = 0
 	if tree.foci[1] == 0.0
 		for i = 1:size(tree.children, 1)
 			enqueue!(queue, tree.children[i])
@@ -471,6 +462,9 @@ function find_range(query, queue, result)
 				distance = search_distance(tree.foci[i], point)
 				push!(temp_distances, distance)
 				weighted_distance += distance*tree.weights[i]
+				if tree.id == tree.foci[i]
+					query_dist = distance
+				end
 
 			end
 			global saved_distances = temp_distances
@@ -478,6 +472,9 @@ function find_range(query, queue, result)
 			temp_distances = saved_distances
 			for i = 1:size(tree.foci,1)
 				weighted_distance += temp_distances[i]*tree.weights[i]
+				if tree.id == tree.foci[i]
+					query_dist = temp_distances[i]
+				end
 			end
 		end
 
@@ -485,8 +482,7 @@ function find_range(query, queue, result)
 			global saved_distances = zeros(0)
 		end
 
-		dist_to_query = search_distance(tree.id, point) #MÅ endres!!!!!
-		global count += 1
+		dist_to_query = query_dist #MÅ endres!!!!!
 
 		if dist_to_query - range <= 0
 			push!(result, tree.id)
@@ -521,7 +517,9 @@ function find_range_linear_search(query)
 	return result, liner_search_comparisons
 end
 
-results_linear, comp_lin = find_range_linear_search(test_queries[5])
+aquaria = Query(3000.0, 30)
+
+results_linear, comp_lin = find_range_linear_search(aquaria)
 
 println(results_linear)
 println(comp_lin())
@@ -530,10 +528,28 @@ println(comp_lin())
 
 
 
-println(find_range(test_queries[5], queue, results))
+println(find_range(aquaria, queue, results))
 
 #println(result)
 
-println(search_comparisons() - count)
+println(search_comparisons())
+
+search_distance, search_comparisons = counter(distance_from_matrix)
+
+results = zeros(0)
+
+saved_distances = zeros(0)
+
+queue = Queue{MultiFocalNode}()
+
+enqueue!(queue, test_tree_opt)
+
+println(find_range(aquaria, queue, results))
+
+#println(result)
+
+println(search_comparisons())
+
+
 
 end
