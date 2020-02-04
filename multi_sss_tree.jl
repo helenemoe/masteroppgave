@@ -1,3 +1,7 @@
+module multi_sss_tree
+
+export result
+
 using DelimitedFiles
 
 using DataStructures
@@ -89,6 +93,15 @@ function build_multi_ssstree(node)
 			node.children[i].foci = foci
 			node.children[i].weights = weights
 		end
+		radius = 0
+		print(node.id)
+		for i=1:size(node.children,1)
+			dist = distance(node.id, node.children[i].id)
+			if dist > radius
+				radius = dist
+			end
+		end
+		node.radius = radius
 		node
 	else
 
@@ -251,6 +264,8 @@ end
 #z = [0 1 2 3 4 5 6]
 
 #find_weights_LP(x, z)
+
+
 
 function build_multi_ssstree_optimized(node, z)
 
@@ -421,6 +436,8 @@ z_test = Vector{Float64}()
 
 test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
 
+#test_tree = build_multi_ssstree(multi_sss_test_tree)
+
 #print_tree(test_tree_opt)
 
 #print_tree(test_tree)
@@ -429,15 +446,16 @@ test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
 
 search_distance, search_comparisons = counter(distance_from_matrix)
 
-result = zeros(0)
+results = zeros(0)
 
 saved_distances = zeros(0)
 
 queue = Queue{MultiFocalNode}()
 
 enqueue!(queue, test_tree_opt)
+count = 0
 
-function find_range(query, queue)
+function find_range(query, queue, result)
 	tree = dequeue!(queue)
 	point = query.focus
 	range = query.radius
@@ -467,24 +485,55 @@ function find_range(query, queue)
 			global saved_distances = zeros(0)
 		end
 
-		dist_to_point = weighted_distance
+		dist_to_query = search_distance(tree.id, point) #MÅ endres!!!!!
+		global count += 1
 
-		if dist_to_point - range <= 0
+		if dist_to_query - range <= 0
 			push!(result, tree.id)
 		end
-		if dist_to_point < range + tree.radius
+
+
+		dist_to_point = weighted_distance
+
+		if dist_to_point <= range + tree.radius
 			for i = 1:size(tree.children, 1)
 				enqueue!(queue, tree.children[i])
 			end
 		end
 	end
 	if ! isempty(queue)
-		find_range(query, queue)
+		find_range(query, queue, result)
+	else
+		return result
 	end
 end
 
-find_range(test_queries[5], queue)
 
-println(result)
+function find_range_linear_search(query)
+	linear_search_distance, liner_search_comparisons = counter(distance_from_matrix)
 
-println(search_comparisons())
+	result = zeros(0)
+	for i=1:N/2
+		if linear_search_distance(query.focus, i) <= query.radius
+			push!(result, i)
+		end
+	end
+	return result, liner_search_comparisons
+end
+
+results_linear, comp_lin = find_range_linear_search(test_queries[5])
+
+println(results_linear)
+println(comp_lin())
+
+
+
+
+
+println(find_range(test_queries[5], queue, results))
+
+#println(result)
+
+println(search_comparisons() - count)
+
+end
