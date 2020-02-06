@@ -179,24 +179,31 @@ function build_multi_ssstree(node)
 
 		add_new = 1
 
+
 		for x = 2:size(list,1)
 			nodex = list[x]
 			add_new = 1
+			pot_parent = MultiFocalNode(0,[0],zeros(0), 0, zeros(0))
+			min_dist = 100000
 			for y = 1:size(children_list,1)
 				nodey = children_list[y]
 				
 				dist = distance(nodey.foci[1], nodex.foci[1])
 
 				if dist < Ma
-
-					push!(children_list[y].children, nodex)
+					if dist < min_dist
+						min_dist = dist
+						pot_parent = children_list[y]
+					end
 					add_new = 0
-					break
 				end
 			end
+
 			if  add_new == 1
 				new_node = nodex
 				push!( children_list, new_node )
+			else
+				push!(pot_parent.children, nodex)
 			end
 			
 		end
@@ -341,21 +348,27 @@ function build_multi_ssstree_optimized(node, z)
 		for x = 2:size(list,1)
 			nodex = list[x]
 			add_new = 1
+			pot_parent = MultiFocalNode(0,[0],zeros(0), 0, zeros(0))
+			min_dist = 100000
 			for y = 1:size(children_list,1)
 				nodey = children_list[y]
 				
-				dist = distance_opt(nodey.foci[1], nodex.foci[1])
+				dist = distance(nodey.foci[1], nodex.foci[1])
 
 				if dist < Ma
-
-					push!(children_list[y].children, nodex)
+					if dist < min_dist
+						min_dist = dist
+						pot_parent = children_list[y]
+					end
 					add_new = 0
-					break
 				end
 			end
+
 			if  add_new == 1
 				new_node = nodex
 				push!( children_list, new_node )
+			else
+				push!(pot_parent.children, nodex)
 			end
 			
 		end
