@@ -1,6 +1,6 @@
 module multi_sss_tree
 
-export result
+export main, main2
 
 using DelimitedFiles
 
@@ -10,11 +10,21 @@ using Random
 
 using JuMP, Clp
 
-Random.seed!(0)
-
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
-N = 4200
+const N = 4200
+
+const MAX_NUM_CHILDREN = 10
+
+const TEST_DATASET_SIZE = N/2
+
+const TRAINING_QUERY_LENGTH = 100
+
+const TEST_QUERY_LENGTH = 1000
+
+const TEST_QUERY_RADIUS = 20
+
+const TOLERANCE = 0.00000001
 
 #dist_matrix = [[0 1 2 3 4 5 6]; [1 0 1 2 3 4 5]; [2 1 0 1 2 3 4]; [3 2 1 0 1 2 3]; [4 3 2 1 0 1 2]; [5 4 3 2 1 0 1]; [6 5 4 3 2 1 0]]
 
@@ -41,6 +51,10 @@ distance,comparisons = counter(distance_from_matrix)
 
 distance_opt, comparisons_opt = counter(distance_from_matrix)
 
+saved_distances = zeros(0)
+
+
+
 mutable struct Query
 	focus :: Float64
 	radius :: Float64
@@ -55,27 +69,49 @@ mutable struct MultiFocalNode
 end
 
 
+function make_training_queries()
 
+	training_query_foci = rand(1:N, TRAINING_QUERY_LENGTH)
 
+	training_queries = Vector{Query}()
 
-TEST_QUERY_LENGTH = 100
+	for i = 1:TRAINING_QUERY_LENGTH
+		push!(training_queries, Query(training_query_foci[i], 0))
+	end
 
+	return training_queries
 
-
-test_query_foci = rand(1:N, TEST_QUERY_LENGTH)
-
-test_query_radi = rand(0:30, TEST_QUERY_LENGTH)
-
-test_queries = Vector{Query}()
-
-for i = 1:TEST_QUERY_LENGTH
-	push!(test_queries, Query(test_query_foci[i], test_query_radi[i]))
 end
+
+training_queries = make_training_queries()
+
+function make_base_tree()
+	multi_sss_children = Vector{MultiFocalNode}()
+	for i = 1:TEST_DATASET_SIZE
+		push!(multi_sss_children, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
+	end
+	return MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
+end
+
+function make_test_queries()
+	test_query_foci = rand(1:N, TEST_QUERY_LENGTH)
+
+	test_query_radi = rand(0:TEST_QUERY_RADIUS, TEST_QUERY_LENGTH)
+
+	test_queries = Vector{Query}()
+
+	for i = 1:TEST_QUERY_LENGTH
+		push!(test_queries, Query(test_query_foci[i], test_query_radi[i]))
+	end
+
+	return test_queries
+end
+
 
 
 function build_multi_ssstree(node)
 
-	if size(node.children,1) < 50
+	if size(node.children,1) < MAX_NUM_CHILDREN
 	#if size(node.children,1) < 1
 
 		foci = zeros(0)
@@ -169,14 +205,6 @@ function build_multi_ssstree(node)
 		for i = 1: size(children_list,1)
 			push!(foci, children_list[i].foci[1])
 		end
-
-		X = zeros(Float64, size(foci,1), size(node.children,1))
-
-		for i=1:size(foci,1)
-			for j=1:size(node.children, 1)
-				X[i,j] = distance(foci[i], node.children[j].id)	
-			end
-		end
 		
 
 		for i = 1: size(children_list,1)
@@ -204,21 +232,6 @@ function build_multi_ssstree(node)
 
 	end
 end
-
-multi_sss_children = Vector{MultiFocalNode}()
-multi_sss_children_OPT = Vector{MultiFocalNode}()
-for i = 1:N/2
-#for i = 1:7
-	push!(multi_sss_children, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
-	push!(multi_sss_children_OPT, MultiFocalNode(i,[i], Vector{MultiFocalNode}(), 0, zeros(0)))
-
-end
-
-multi_sss_test_tree = MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
-
-msst_OPT = MultiFocalNode(0,[0],multi_sss_children_OPT, 0, zeros(0))
-
-#test_tree = build_multi_ssstree(multi_sss_test_tree)
 
 
 function coeff(PF, QF)
@@ -264,17 +277,10 @@ function coeff(PF, QF)
 
 end
 
-#x = [0 1 2 3 4 5 6; 1 0 1 2 3 4 5; 2 1 0 1 2 3 4; 3 2 1 0 1 2 3; 4 3 2 1 0 1 2; 5 4 3 2 1 0 1; 6 5 4 3 2 1 0]
-
-#z = [0 1 2 3 4 5 6]
-
-#find_weights_LP(x, z)
-
-
 
 function build_multi_ssstree_optimized(node, z)
 
-	if size(node.children,1) < 50
+	if size(node.children,1) < MAX_NUM_CHILDREN
 	#if size(node.children,1) < 1
 
 		X = zeros(Float64, size(node.foci,1), size(node.children,1))
@@ -378,10 +384,10 @@ function build_multi_ssstree_optimized(node, z)
 
 		for i=1:size(foci,1)
 			sum_dist = 0
-			for j=1:TEST_QUERY_LENGTH
-				sum_dist += distance_opt(foci[i], test_queries[j].focus) - test_queries[j].radius
+			for j=1:TRAINING_QUERY_LENGTH
+				sum_dist += distance_opt(foci[i], training_queries[j].focus) #- training_queries[j].radius
 			end
-			avg_dist = sum_dist/TEST_QUERY_LENGTH
+			avg_dist = sum_dist/TRAINING_QUERY_LENGTH
 			push!(Z, avg_dist)
 		end
 
@@ -421,31 +427,9 @@ function print_tree(tree)
 	end
 end
 
-z_test = Vector{Float64}()
 
 
-
-test_tree_opt = build_multi_ssstree_optimized(multi_sss_test_tree, z_test)
-
-test_tree = build_multi_ssstree(msst_OPT)
-
-#print_tree(test_tree_opt)
-
-#print_tree(test_tree)
-
-#println(comparisons())
-
-search_distance, search_comparisons = counter(distance_from_matrix)
-
-results = zeros(0)
-
-saved_distances = zeros(0)
-
-queue = Queue{MultiFocalNode}()
-
-enqueue!(queue, test_tree)
-
-function find_range(query, queue, result)
+function find_range(query, queue, result, search_distance, comparisons)
 	tree = dequeue!(queue)
 	point = query.focus
 	range = query.radius
@@ -482,7 +466,7 @@ function find_range(query, queue, result)
 			global saved_distances = zeros(0)
 		end
 
-		dist_to_query = query_dist #MÅ endres!!!!!
+		dist_to_query = query_dist
 
 		if dist_to_query - range <= 0
 			push!(result, tree.id)
@@ -491,16 +475,16 @@ function find_range(query, queue, result)
 
 		dist_to_point = weighted_distance
 
-		if dist_to_point <= range + tree.radius
+		if dist_to_point <= range + tree.radius + TOLERANCE
 			for i = 1:size(tree.children, 1)
 				enqueue!(queue, tree.children[i])
 			end
 		end
 	end
 	if ! isempty(queue)
-		find_range(query, queue, result)
+		find_range(query, queue, result, search_distance, comparisons)
 	else
-		return result
+		return result, comparisons()
 	end
 end
 
@@ -509,7 +493,7 @@ function find_range_linear_search(query)
 	linear_search_distance, liner_search_comparisons = counter(distance_from_matrix)
 
 	result = zeros(0)
-	for i=1:N/2
+	for i=1:TEST_DATASET_SIZE
 		if linear_search_distance(query.focus, i) <= query.radius
 			push!(result, i)
 		end
@@ -517,39 +501,108 @@ function find_range_linear_search(query)
 	return result, liner_search_comparisons
 end
 
-aquaria = Query(3000.0, 30)
+function search_tree(query, tree)
+	search_distance, search_comparisons = counter(distance_from_matrix)
 
-results_linear, comp_lin = find_range_linear_search(aquaria)
+	queue = Queue{MultiFocalNode}()
 
-println(results_linear)
-println(comp_lin())
+	enqueue!(queue, tree)
+
+	result, comparisons = find_range(query, queue, zeros(0), search_distance, search_comparisons)
+
+	linear_search_result, c = find_range_linear_search(query)
+
+	@assert issetequal(Set(result), Set(linear_search_result))
+
+	return result, comparisons
+
+end
+
+function build_trees_and_test_queries()
+
+	test_queries = make_test_queries()
+	
+	weigthed_base_tree = make_base_tree()
+	non_weigthed_base_tree = make_base_tree()
+
+	weighted_tree = build_multi_ssstree_optimized(weigthed_base_tree, Vector{Float64}())
+	non_weighted_tree = build_multi_ssstree(non_weigthed_base_tree)
+
+	sum_comparisons_weighted = 0
+	sum_comparisons_non_weighted = 0
+
+	result_var_bedre = 0
+
+	result_var_bedre_eller_lik = 0
+
+	for i = 1:TEST_QUERY_LENGTH
+
+		result_non_weighted, comparisons_non_weighted = search_tree(test_queries[i], non_weighted_tree)
+		result_weighted, comparisons_weighted = search_tree(test_queries[i], weighted_tree)
+
+		sum_comparisons_weighted += comparisons_weighted
+		sum_comparisons_non_weighted += comparisons_non_weighted
+
+		if comparisons_non_weighted > comparisons_weighted
+			result_var_bedre += 1
+		end
+
+		if comparisons_non_weighted >= comparisons_weighted
+			result_var_bedre_eller_lik += 1
+		end
+
+	end
+
+	println(sum_comparisons_weighted/TEST_QUERY_LENGTH)
+	println(sum_comparisons_non_weighted/TEST_QUERY_LENGTH)
+
+	return result_var_bedre_eller_lik/TEST_QUERY_LENGTH
+
+end
+
+function main()
+	avg = 0
+	for i=1:10
+		avg += build_trees_and_test_queries()
+		println("hei")
+	end
+	println(avg/10)
 
 
+end
 
+function main2(point, radius)
 
+	test_query = Query(point, radius)
+	
+	weigthed_base_tree = make_base_tree()
+	non_weigthed_base_tree = make_base_tree()
 
-println(find_range(aquaria, queue, results))
+	weighted_tree = build_multi_ssstree_optimized(weigthed_base_tree, Vector{Float64}())
+	non_weighted_tree = build_multi_ssstree(non_weigthed_base_tree)
 
-#println(result)
+	sum_comparisons_weighted = 0
+	sum_comparisons_non_weighted = 0
 
-println(search_comparisons())
+	println("forste ")
 
-search_distance, search_comparisons = counter(distance_from_matrix)
+	result_non_weighted, comparisons_non_weighted = search_tree(test_query, non_weighted_tree)
 
-results = zeros(0)
+	println("haloo")
 
-saved_distances = zeros(0)
+	result_weighted, comparisons_weighted = search_tree(test_query, weighted_tree)
 
-queue = Queue{MultiFocalNode}()
+	println("hei")
 
-enqueue!(queue, test_tree_opt)
+	
 
-println(find_range(aquaria, queue, results))
+	sum_comparisons_weighted += comparisons_weighted
+	sum_comparisons_non_weighted += comparisons_non_weighted
 
-#println(result)
+	println(sum_comparisons_weighted/TEST_QUERY_LENGTH)
+	println(sum_comparisons_non_weighted/TEST_QUERY_LENGTH)
 
-println(search_comparisons())
-
+end
 
 
 end
