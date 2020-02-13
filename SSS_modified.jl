@@ -477,12 +477,10 @@ function search_tree(query, tree, dataset, distance_function)
 
 end
 
-function build_trees(dataset, training_query_dataset, num_training_queries)
+function build_trees(dataset, training_queries)
 	
 	weigthed_base_tree = make_base_tree(dataset)
 	non_weigthed_base_tree = make_base_tree(dataset)
-
-	training_queries = make_queries(training_query_dataset, num_training_queries)
 
 	weighted_tree = build_multi_ssstree_optimized(weigthed_base_tree, Vector{Float64}(), training_queries)
 	non_weighted_tree = build_multi_ssstree(non_weigthed_base_tree)
@@ -529,7 +527,7 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 	println(sum_comparisons_weighted/test_query_length)
 	println(sum_comparisons_non_weighted/test_query_length)
 
-	savefig(plot!(1:test_query_length, [all_comparisons_non_weighted, all_comparisons_weighted], title="Comparisons",label=["Non weighted" "Weighted"]), "plot.png")
+	savefig(plot(1:test_query_length, [all_comparisons_non_weighted, all_comparisons_weighted], title="Comparisons",label=["Non weighted" "Weighted"]), "plot.png")
 
 	return result_var_bedre_eller_lik/test_query_length
 end
@@ -543,13 +541,13 @@ function test_queries_dist_matrix()
 
 	dataset = 1:size(dist_matrix,1)/2
 
-	training_query_dataset = 1:size(dist_matrix,1)
+	query_dataset = 1:size(dist_matrix,1)
 
-	testing_queries = make_queries(training_query_dataset, 100)
+	testing_queries = make_queries(query_dataset, 100)
 
-	num_training_queries = 100
+	training_queries = make_queries(query_dataset, 100)
 
-	weighted_tree, non_weighted_tree = build_trees(dataset, training_query_dataset, num_training_queries)
+	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
 	test_queries(weighted_tree, non_weighted_tree, dataset, distance_from_matrix, testing_queries)
 	
