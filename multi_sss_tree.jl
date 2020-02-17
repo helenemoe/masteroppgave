@@ -72,7 +72,7 @@ saved_distances = zeros(0)
 
 
 mutable struct Query
-	focus :: Float64
+	focus :: Any
 	radius :: Float64
 end
 
