@@ -21,8 +21,6 @@ dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
 const MAX_NUM_CHILDREN = 50
 
-const QUERY_RADIUS = 30
-
 const TOLERANCE = 0.00000001
 
 
@@ -62,11 +60,11 @@ mutable struct MultiFocalNode
 end
 
 
-function make_queries(query_dataset, num_queries)
+function make_queries(query_dataset, num_queries, query_radius)
 
 	query_foci = sample(query_dataset, num_queries, replace=false)
 
-	query_radi = rand(0:QUERY_RADIUS, num_queries)
+	query_radi = rand(0:query_radius, num_queries)
 
 	queries = Vector{Query}()
 
@@ -78,9 +76,9 @@ function make_queries(query_dataset, num_queries)
 
 end
 
-function make_query_objects(query_dataset)
+function make_query_objects(query_dataset, query_radius)
 
-	query_radi = rand(0:QUERY_RADIUS, size(query_dataset, 2))
+	query_radi = rand(0:query_radius, size(query_dataset, 2))
 
 	queries = Vector{Query}()
 
@@ -552,13 +550,13 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 	println(result_var_bedre/test_query_length)
 	println(result_var_bedre_eller_lik/test_query_length)
 
-	savefig(plot(1:test_query_length, [all_comparisons_non_weighted, all_comparisons_weighted], title="Comparisons",label=["Non weighted" "Weighted"]), "plot.png")
+	#savefig(plot(1:test_query_length, [all_comparisons_non_weighted, all_comparisons_weighted], title="Comparisons",label=["Non weighted" "Weighted"]), "plot.png")
 
-	return result_var_bedre_eller_lik/test_query_length
+	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length
 end
 
 
-function test_queries_dist_matrix()
+function test_queries_dist_matrix(query_radius)
 
 	global distance,comparisons = counter(distance_from_matrix)
 
@@ -568,36 +566,67 @@ function test_queries_dist_matrix()
 
 	query_dataset = transpose(1:size(dist_matrix,1))
 
-	testing_queries = make_queries(query_dataset, 100)
+	testing_queries = make_queries(query_dataset, 100, query_radius)
 
-	training_queries = make_queries(query_dataset, 100)
+	training_queries = make_queries(query_dataset, 100, query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
-	test_queries(weighted_tree, non_weighted_tree, dataset, distance_from_matrix, testing_queries)
+	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_from_matrix, testing_queries)
 	
 end
 
-function test_queries_gaussian()
+function test_queries_gaussian(tree_size, query_radius, num_training_queries, dimention)
 
 	global distance,comparisons = counter(distance_euclidean)
 
 	global distance_opt, comparisons_opt = counter(distance_euclidean)
 
-	dataset, labeling, cluster_means = generate_gaussian_data(20000,10,10,100.0)
+	dataset, labeling, cluster_means = generate_gaussian_data(tree_size,dimention,10,100.0)
 
-	training_query_dataset, labeling, cluster_means = generate_gaussian_data(1000,10,4,100.0)
+	training_query_dataset, labeling, cluster_means = generate_gaussian_data(num_training_queries,dimention,4,100.0)
 
-	testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,10,2,100.0)
+	testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimention,2,100.0)
 
-	testing_queries = make_query_objects(training_query_dataset)
+	testing_queries = make_query_objects(training_query_dataset, query_radius)
 
-	training_queries = make_query_objects(training_query_dataset)
+	training_queries = make_query_objects(training_query_dataset, query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
-	test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
+	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
 	
 end
+
+function plot_diffferent_data_sizes()
+	w_results = Vector{Float64}()
+	nw_results = Vector{Float64}()
+
+	io_w = open("plot_latex_datasize_w.txt", "w")
+	io_nw = open("plot_latex_datasize_nw.txt", "w")
+
+
+
+	#for i=[1000,5000,10000,15000,20000]
+	for i=[100,150,200,250,300]
+		w_result, nw_result = test_queries_gaussian(i, 30, 200, 10)
+		push!(w_results, w_result)
+		push!(nw_results, nw_result)
+		write(io_w, "($i,$w_result)")
+		write(io_nw, "($i,$nw_result)")
+	end
+
+	close(io_nw)
+	close(io_w)
+
+	println(w_results)
+	println(nw_results)
+
+	#savefig(plot([1000,5000,10000,15000,20000], [nw_results, w_results], title="Comparisons",label=["Non weighted" "Weighted"]), "plot_datasize.png")
+
+
+end
+
+
 
 end
