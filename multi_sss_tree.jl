@@ -10,19 +10,25 @@ using Random
 
 using JuMP, Clp
 
+using DPMMSubClusters
+
+using Distances
+
+points, labeling, cluster_means = generate_gaussian_data(10000,2,6,100.0)
+
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
-const N = 4200
+const N = 10000
 
 const MAX_NUM_CHILDREN = 10
 
-const TEST_DATASET_SIZE = N/2
+const TEST_DATASET_SIZE = N
 
 const TRAINING_QUERY_LENGTH = 100
 
 const TEST_QUERY_LENGTH = 1000
 
-const TEST_QUERY_RADIUS = 20
+const TEST_QUERY_RADIUS = 5
 
 const TOLERANCE = 0.00000001
 
@@ -47,11 +53,21 @@ function distance_from_matrix(x, y)
 	return distance
 end
 
-distance,comparisons = counter(distance_from_matrix)
+function distance_euclidean(x, y)
+	return evaluate(Euclidean(), x, y)
+end
 
-distance_opt, comparisons_opt = counter(distance_from_matrix)
+#distance,comparisons = counter(distance_from_matrix)
+
+distance,comparisons = counter(distance_euclidean)
+
+#distance_opt, comparisons_opt = counter(distance_from_matrix)
+
+distance_opt, comparisons_opt = counter(distance_euclidean)
 
 saved_distances = zeros(0)
+
+
 
 
 
@@ -61,7 +77,7 @@ mutable struct Query
 end
 
 mutable struct MultiFocalNode
-	id 		:: Int64
+	id 		:: Any
     foci        :: Vector{Float64}
     children :: Vector{MultiFocalNode}
     radius :: Float64
@@ -83,7 +99,21 @@ function make_training_queries()
 
 end
 
-training_queries = make_training_queries()
+function make_gaussian_training_queries()
+
+	training_query_foci, labeling, cluster_means = generate_gaussian_data(100,2,6,100.0)
+
+	training_queries = Vector{Query}()
+
+	for i = 1:TRAINING_QUERY_LENGTH
+		push!(training_queries, Query(training_query_foci[i], 0))
+	end
+
+	return training_queries
+
+end
+
+training_queries = make_gaussian_training_queries()
 
 function make_base_tree()
 	multi_sss_children = Vector{MultiFocalNode}()
@@ -93,8 +123,31 @@ function make_base_tree()
 	return MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
 end
 
+function make_gaussian_base_tree()
+	multi_sss_children = Vector{MultiFocalNode}()
+	for i = 1:N
+		push!(multi_sss_children, MultiFocalNode(points[i],[points[i]], Vector{MultiFocalNode}(), 0, zeros(0)))
+	end
+	return MultiFocalNode(0,[0],multi_sss_children, 0, zeros(0))
+end
+
 function make_test_queries()
 	test_query_foci = rand(1:N, TEST_QUERY_LENGTH)
+
+	test_query_radi = rand(0:TEST_QUERY_RADIUS, TEST_QUERY_LENGTH)
+
+	test_queries = Vector{Query}()
+
+	for i = 1:TEST_QUERY_LENGTH
+		push!(test_queries, Query(test_query_foci[i], test_query_radi[i]))
+	end
+
+	return test_queries
+end
+
+function make_gaussian_test_queries()
+
+	test_query_foci, labeling, cluster_means = generate_gaussian_data(TEST_QUERY_LENGTH,2,6,100.0)
 
 	test_query_radi = rand(0:TEST_QUERY_RADIUS, TEST_QUERY_LENGTH)
 
@@ -514,6 +567,18 @@ function find_range_linear_search(query)
 	return result, liner_search_comparisons
 end
 
+function find_range_linear_search_euclidean(query)
+	linear_search_distance, liner_search_comparisons = counter(distance_euclidean)
+
+	result = zeros(0)
+	for i=1:TEST_DATASET_SIZE
+		if linear_search_distance(query.focus, points[i]) <= query.radius
+			push!(result, points[i])
+		end
+	end
+	return result, liner_search_comparisons
+end
+
 function search_tree(query, tree)
 	search_distance, search_comparisons = counter(distance_from_matrix)
 
@@ -524,6 +589,29 @@ function search_tree(query, tree)
 	result, comparisons = find_range(query, queue, zeros(0), search_distance, search_comparisons)
 
 	linear_search_result, c = find_range_linear_search(query)
+
+	@assert issetequal(Set(result), Set(linear_search_result))
+
+	return result, comparisons
+
+end
+
+function search_tree_euclidean(query, tree)
+	search_distance, search_comparisons = counter(distance_euclidean)
+
+	queue = Queue{MultiFocalNode}()
+
+	enqueue!(queue, tree)
+
+	result, comparisons = find_range(query, queue, zeros(0), search_distance, search_comparisons)
+
+	linear_search_result, c = find_range_linear_search_euclidean(query)
+
+	#println("linear")
+	#println(Set(result))
+	#println("tree")
+	#println(Set(linear_search_result))
+
 
 	@assert issetequal(Set(result), Set(linear_search_result))
 
@@ -552,6 +640,48 @@ function build_trees_and_test_queries()
 
 		result_non_weighted, comparisons_non_weighted = search_tree(test_queries[i], non_weighted_tree)
 		result_weighted, comparisons_weighted = search_tree(test_queries[i], weighted_tree)
+
+		sum_comparisons_weighted += comparisons_weighted
+		sum_comparisons_non_weighted += comparisons_non_weighted
+
+		if comparisons_non_weighted > comparisons_weighted
+			result_var_bedre += 1
+		end
+
+		if comparisons_non_weighted >= comparisons_weighted
+			result_var_bedre_eller_lik += 1
+		end
+
+	end
+
+	println(sum_comparisons_weighted/TEST_QUERY_LENGTH)
+	println(sum_comparisons_non_weighted/TEST_QUERY_LENGTH)
+
+	return result_var_bedre_eller_lik/TEST_QUERY_LENGTH
+
+end
+
+function build_gaussian_trees_and_test_queries()
+
+	test_queries = make_gaussian_test_queries()
+	
+	weigthed_base_tree = make_gaussian_base_tree()
+	non_weigthed_base_tree = make_gaussian_base_tree()
+
+	weighted_tree = build_multi_ssstree_optimized(weigthed_base_tree, Vector{Float64}())
+	non_weighted_tree = build_multi_ssstree(non_weigthed_base_tree)
+
+	sum_comparisons_weighted = 0
+	sum_comparisons_non_weighted = 0
+
+	result_var_bedre = 0
+
+	result_var_bedre_eller_lik = 0
+
+	for i = 1:TEST_QUERY_LENGTH
+
+		result_non_weighted, comparisons_non_weighted = search_tree_euclidean(test_queries[i], non_weighted_tree)
+		result_weighted, comparisons_weighted = search_tree_euclidean(test_queries[i], weighted_tree)
 
 		sum_comparisons_weighted += comparisons_weighted
 		sum_comparisons_non_weighted += comparisons_non_weighted
