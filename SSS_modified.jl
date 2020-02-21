@@ -16,6 +16,10 @@ using DPMMSubClusters
 
 using Distances
 
+using Distributions
+
+using GaussianMixtures
+
 
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
@@ -583,6 +587,7 @@ function find_range_linear_search(query, dataset, distance_function)
 	linear_search_distance, liner_search_comparisons = counter(distance_function)
 
 	result = Vector{Any}()
+
 	for i=1:size(dataset, 2)
 		if linear_search_distance(query.focus, dataset[:,i]) <= query.radius
 			push!(result, dataset[:,i])
@@ -699,6 +704,36 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length, sum_comparisons_both/test_query_length
 end
 
+function find_points(number, amount)
+	list = zeros(0)
+	point = number
+	hh = dist_matrix[point,:]
+	for i=1:size(dist_matrix,1)
+		if size(list,1)<amount
+			push!(list, i)
+		else
+			po = hh[i]
+			lol = false
+			ll = 0
+			lll = 0
+			for j=1:size(list,1)
+				if po<hh[convert(Int64,list[j])]
+					lol = true
+					if list[j]>ll
+						ll=j
+						lll = hh[convert(Int64,list[j])]
+					end
+				end
+			end
+			if lol == true
+				deleteat!(list, ll)
+				push!(list, i)
+			end
+		end
+	end
+	return list
+end
+
 
 function test_queries_dist_matrix(query_radius)
 
@@ -708,7 +743,7 @@ function test_queries_dist_matrix(query_radius)
 
 	dataset = transpose(1:floor(size(dist_matrix,1)*3/4))
 
-	query_dataset = floor(size(dist_matrix,1)/2):size(dist_matrix,1)
+	query_dataset = vcat(find_points(10, 100), find_points(3000, 50))
 
 	training_queries, testing_queries = make_queries(query_dataset, query_radius)
 
@@ -730,17 +765,59 @@ function test_queries_gaussian(tree_size, query_radius, num_training_queries, di
 
 	dataset, labeling, cluster_means = generate_gaussian_data(tree_size,dimension,4,100.0)
 
-	query_dataset, labeling, cluster_means = generate_gaussian_data(num_training_queries,dimension,3,50.0)
+
+	query_dataset, labeling, cluster_means = generate_gaussian_data(num_training_queries,dimension,1,5.0)
 
 	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimension,20,100.0)
 
-	testing_queries, training_queries = make_query_objects(query_dataset, query_radius)
+	testing_queries, training_queries = make_query_objects(query_dataset .+ 0.1, query_radius)
 
 	#training_queries = make_query_objects(training_query_dataset, query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
-	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, training_queries)
+	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
+	
+end
+
+function test_queries_gaussian_mixture(tree_size, query_radius, num_training_queries, dimension)
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	dataset, labeling, cluster_means = generate_gaussian_data(tree_size,dimension,4,100.0)
+
+	gm1 = rand(GMM, 4, 2, kind=:full, sep=13.0)
+	data1 = rand(gm1, 4000)
+	data1 = transpose(data1)
+
+	gm2 = rand(GMM, 3, 2, kind=:full, sep=0.0)
+	data2 = rand(gm2, 1000)
+	data2 = transpose(data2)
+
+	gm3 = rand(GMM, 5, 2, kind=:full, sep=25.0)
+	data3 = rand(gm3, 3000)
+	data3 = transpose(data3)
+
+	data = hcat(data1,data2,data3)
+
+
+
+	gmm = rand(GMM, 2, 2, kind=:full, sep=70.0)
+	q_data = rand(gmm, 500)
+	q_data = transpose(q_data)
+
+
+	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(200,2,20,100.0)
+
+	testing_queries, training_queries = make_query_objects(q_data, query_radius)
+
+	#training_queries = make_query_objects(training_query_dataset, query_radius)
+
+	weighted_tree, non_weighted_tree = build_trees(data, training_queries)
+
+	return test_queries(weighted_tree, non_weighted_tree, data, distance_euclidean, training_queries)
 	
 end
 
