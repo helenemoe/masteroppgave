@@ -72,7 +72,7 @@ function make_queries(query_dataset, query_radius)
 
 	test_query_foci_index = sample(1:num_queries, convert(Int64, floor(num_queries/2)), replace=false)
 
-	query_radi = rand(0:query_radius, num_queries)
+	query_radi = query_radius
 
 	#@assert issetequal(Set(query_foci), Set(query_dataset))
 
@@ -81,15 +81,39 @@ function make_queries(query_dataset, query_radius)
 
 	for i = 1:num_queries
 		if i in test_query_foci_index
-			push!(training_query_dataset, Query(query_dataset[i], query_radi[i]))
+			push!(training_query_dataset, Query(query_dataset[i], query_radi))
 		else
-			push!(testing_query_dataset, Query(query_dataset[i], query_radi[i]))
+			push!(testing_query_dataset, Query(query_dataset[i], query_radi))
 		end
 	end
 
 	
 
 	return training_query_dataset, testing_query_dataset
+
+end
+
+function make_queries(query_dataset, query_radius, num_queries)
+
+	len_data = size(query_dataset, 1)
+	println(len_data)
+
+	#query_foci = sample(query_dataset, num_queries, replace=false)
+
+	query_foci_index = sample(1:len_data, num_queries, replace=false)
+
+	query_radi = query_radius
+
+	#@assert issetequal(Set(query_foci), Set(query_dataset))
+
+	query_dataset = Vector{Query}()
+
+	for i=1:size(query_foci_index,1)
+		push!(query_dataset, Query(query_foci_index[i], query_radi))
+	end
+
+
+	return query_dataset[1:convert(Int64,floor(num_queries/2))], query_dataset[convert(Int64,floor(num_queries/2)):num_queries]
 
 end
 
@@ -109,20 +133,22 @@ function make_query_objects(query_dataset, query_radius)
 	end
 
 
-	test_query_radi = rand(0:query_radius, size(test_query_foci, 1))
+	test_query_radi = query_radius
+
+	test_query_radi = test_query_radi .* 0.01
 
 	test_queries = Vector{Query}()
 
 	for i = 1:size(test_query_foci, 1)
-		push!(test_queries, Query(test_query_foci[i], test_query_radi[i]))
+		push!(test_queries, Query(test_query_foci[i], test_query_radi))
 	end
 
-	train_query_radi = rand(0:query_radius, size(train_query_foci, 1))
+	train_query_radi = query_radius
 
 	train_queries = Vector{Query}()
 
 	for i = 1:size(train_query_foci, 1)
-		push!(train_queries, Query(train_query_foci[i], train_query_radi[i]))
+		push!(train_queries, Query(train_query_foci[i], train_query_radi))
 	end
 
 	return test_queries, train_queries
@@ -489,12 +515,13 @@ function find_range(query, queue, result, search_distance, comparisons)
 
 		dist_to_query = query_dist
 
-		if dist_to_query - range <= 0
+		
+		if dist_to_query - range <= 0.0 + TOLERANCE
 			push!(result, tree.id)
 		end
 
-
 		dist_to_point = weighted_distance
+
 
 		if dist_to_point <= range + tree.radius + TOLERANCE
 			for i = 1:size(tree.children, 1)
@@ -567,7 +594,6 @@ function find_range(query, queue_normal, queue_optimized, result, search_distanc
 			tree_radius = w_tree.radius
 		end
 
-
 		if dist_to_point <= range + tree_radius + TOLERANCE
 			for i = 1:size(nw_tree.children, 1)
 				enqueue!(queue_normal, nw_tree.children[i])
@@ -628,7 +654,9 @@ function search_tree(query, nw_tree, w_tree, dataset, distance_function)
 
 	linear_search_result, c = find_range_linear_search(query, dataset, distance_function)
 
-	@assert issetequal(Set(result), Set(linear_search_result))
+	@assert Set(result) ==  Set(linear_search_result)
+
+	#@assert issetequal(Set(result), Set(linear_search_result))
 
 	return result, comparisons
 
@@ -659,6 +687,8 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 
 	result_var_bedre_eller_lik = 0
 
+	avg_restult = 0
+
 	test_query_length = size(testing_queries, 1)
 
 	for i = 1:test_query_length
@@ -670,6 +700,7 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 		sum_comparisons_weighted += comparisons_weighted
 		sum_comparisons_non_weighted += comparisons_non_weighted
 		sum_comparisons_both += comparisons_both
+		avg_restult  += size(result_weighted,1)
 
 
 		push!(all_comparisons_non_weighted, comparisons_non_weighted)
@@ -695,13 +726,16 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 	println(sum_comparisons_non_weighted/test_query_length)
 	println(sum_comparisons_both/test_query_length)
 
+	println("result:")
+	println(avg_restult/test_query_length)
+
 	println(result_var_bedre/test_query_length)
 	println(result_var_bedre_eller_lik/test_query_length)
 
 
 	#savefig(plot(1:test_query_length, [all_comparisons_non_weighted, all_comparisons_weighted], title="Comparisons",label=["Non weighted" "Weighted"]), "plot.png")
 
-	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length, sum_comparisons_both/test_query_length
+	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length, sum_comparisons_both/test_query_length, avg_restult/test_query_length
 end
 
 function find_points(number, amount)
@@ -734,6 +768,51 @@ function find_points(number, amount)
 	return list
 end
 
+function find_points(number, amount, distance_function, data)
+	list = Array{Float64}(undef, 2,amount)
+	point = data[:,number]
+	distance,comparisons = counter(distance_function)
+
+	for i=1:size(data,2)
+		if size(list,2)<amount
+			list[:,i] = data[:,i]
+		else
+			add_to_list = false
+			change_distance = 0
+			change_point = 0
+			dist_i = distance(point, data[:,i])
+			for j=1:size(list,2)
+				dist_j = distance(point, list[:,j])
+				if dist_i<dist_j
+					add_to_list = true
+					if dist_j>change_distance
+						change_point=j
+						change_distance = dist_j
+					end
+				end
+			end
+			if add_to_list == true
+				list[:,change_point] = data[:,i]
+			end
+		end
+	end
+	return list
+end
+
+function find_highest()
+	max_sum = 0
+	max_i = 0
+	for i = 1:size(dist_matrix,1)
+		if sum(dist_matrix[:,i]) > max_sum
+			max_sum = sum(dist_matrix[:,i])
+			max_i = i
+		end
+	end 
+
+	@assert max_i > 0
+
+	return max_i
+end
 
 function test_queries_dist_matrix(query_radius)
 
@@ -743,13 +822,19 @@ function test_queries_dist_matrix(query_radius)
 
 	dataset = transpose(1:floor(size(dist_matrix,1)*3/4))
 
-	query_dataset = vcat(find_points(10, 100), find_points(3000, 50))
+	#query_dataset = vcat(find_points(10, 100), find_points(3000, 50))
+	#point = find_highest()
 
-	training_queries, testing_queries = make_queries(query_dataset, query_radius)
+	#query_dataset = find_points(find_highest(), 1000) 
 
-	#testing_queries = make_queries(query_dataset, 100, query_radius)
+	#training_queries, testing_queries = make_queries(query_dataset, query_radius)
+
+
+	#testing_queries = make_queries(dataset, 100, query_radius)
 
 	#training_queries = make_queries(query_dataset, 100, query_radius)
+
+	training_queries, testing_queries = make_queries(1:size(dist_matrix,1), query_radius, 100)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
@@ -765,12 +850,18 @@ function test_queries_gaussian(tree_size, query_radius, num_training_queries, di
 
 	dataset, labeling, cluster_means = generate_gaussian_data(tree_size,dimension,4,100.0)
 
+	dataset = convert(Array{Float64}, dataset)
+
 
 	query_dataset, labeling, cluster_means = generate_gaussian_data(num_training_queries,dimension,1,5.0)
 
+	query_dataset = convert(Array{Float64}, query_dataset)
+
+	near_points = find_points(3, 100, distance_euclidean, dataset)
+
 	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimension,20,100.0)
 
-	testing_queries, training_queries = make_query_objects(query_dataset .+ 0.1, query_radius)
+	testing_queries, training_queries = make_query_objects(query_dataset, query_radius)
 
 	#training_queries = make_query_objects(training_query_dataset, query_radius)
 
@@ -802,22 +893,24 @@ function test_queries_gaussian_mixture(tree_size, query_radius, num_training_que
 
 	data = hcat(data1,data2,data3)
 
-
-
-	gmm = rand(GMM, 2, 2, kind=:full, sep=70.0)
-	q_data = rand(gmm, 500)
+	gmm = rand(GMM, 2, 2, kind=:full, sep=0.0)
+	q_data = rand(gmm, 100)
 	q_data = transpose(q_data)
 
+	near_points = find_points(3, 100, distance_euclidean, data)
 
+	near_points2 = find_points(6007, 100, distance_euclidean, data)
+
+	near_points3 = hcat(near_points, near_points2)
 	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(200,2,20,100.0)
 
-	testing_queries, training_queries = make_query_objects(q_data, query_radius)
+	testing_queries, training_queries = make_query_objects(near_points, query_radius)
 
 	#training_queries = make_query_objects(training_query_dataset, query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(data, training_queries)
 
-	return test_queries(weighted_tree, non_weighted_tree, data, distance_euclidean, training_queries)
+	return test_queries(weighted_tree, non_weighted_tree, data, distance_euclidean, testing_queries)
 	
 end
 
@@ -851,6 +944,59 @@ function plot_diffferent_data_sizes()
 	relation = b_results ./ nw_results
 
 	savefig(plot([1000,5000,10000,20000], [relation], title="Comparisons",label=["Relation"]), "plot_datasize.png")
+
+
+end
+
+
+function plot_dist_matrix()
+	w_results = Vector{Float64}()
+	nw_results = Vector{Float64}()
+	b_results = Vector{Float64}()
+
+	percent_results = Vector{Float64}()
+
+	io_w = open("plot_latex_chome_w.txt", "w")
+	io_nw = open("plot_latex_chome_nw.txt", "w")
+	io_b = open("plot_latex_chome_b.txt", "w")
+
+
+
+
+	#for i=[1000,5000,10000,15000,20000]
+	for i=[5,10, 15, 20, 25, 30]
+
+		w_result, nw_result, b_result, num_result = test_queries_dist_matrix(i)
+		println("num result: $num_result")
+
+		w_result_f = 100*w_result/3150
+		nw_result_f = 100*nw_result/3150
+		b_result_f = 100*b_result/3150
+
+		push!(w_results, w_result)
+		push!(nw_results, nw_result)
+		push!(b_results, b_result)
+
+		push!(percent_results, num_result/3150)
+		y_axis_f = 100*num_result/3150
+		write(io_w, "($y_axis_f,$w_result_f)")
+		write(io_nw, "($y_axis_f,$nw_result_f)")
+		write(io_b, "($y_axis_f,$b_result_f)")
+	end
+
+	close(io_nw)
+	close(io_w)
+	close(io_b)
+
+	println(w_results)
+	println(nw_results)
+	println(b_results)
+
+	percent_w_results = w_results ./ 3150
+	percent_nw_results = nw_results ./ 3150
+	percent_b_results = b_results ./ 3150
+
+	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_chromecast.png")
 
 
 end
