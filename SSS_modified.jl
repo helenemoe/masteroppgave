@@ -96,8 +96,6 @@ end
 function make_queries(query_dataset, query_radius, num_queries)
 
 	len_data = size(query_dataset, 1)
-	println(len_data)
-
 	#query_foci = sample(query_dataset, num_queries, replace=false)
 
 	query_foci_index = sample(1:len_data, num_queries, replace=false)
@@ -135,7 +133,7 @@ function make_query_objects(query_dataset, query_radius)
 
 	test_query_radi = query_radius
 
-	test_query_radi = test_query_radi .* 0.01
+	test_query_radi = test_query_radi
 
 	test_queries = Vector{Query}()
 
@@ -437,6 +435,8 @@ function build_multi_ssstree_optimized(node, z, training_queries)
 					X[i,j] = distance_opt(node.foci[i], node.children[j].id)	
 				end
 			end
+
+
 			optimized_weights, r = coeff(X, z)
 			node.weights = vec(optimized_weights)
 			node.radius = r
@@ -450,7 +450,9 @@ function build_multi_ssstree_optimized(node, z, training_queries)
 			for j=1:size(training_queries, 1)
 				sum_dist += distance_opt(foci[i], training_queries[j].focus)
 			end
+
 			avg_dist = sum_dist/size(training_queries, 1)
+
 			push!(Z, avg_dist)
 		end
 		
@@ -769,12 +771,13 @@ function find_points(number, amount)
 end
 
 function find_points(number, amount, distance_function, data)
-	list = Array{Float64}(undef, 2,amount)
+	list = Array{Float64}(undef, size(data, 1),amount)
 	point = data[:,number]
+
 	distance,comparisons = counter(distance_function)
 
 	for i=1:size(data,2)
-		if size(list,2)<amount
+		if i<=amount
 			list[:,i] = data[:,i]
 		else
 			add_to_list = false
@@ -823,9 +826,9 @@ function test_queries_dist_matrix(query_radius)
 	dataset = transpose(1:floor(size(dist_matrix,1)*3/4))
 
 	#query_dataset = vcat(find_points(10, 100), find_points(3000, 50))
-	#point = find_highest()
+	point = rand(1:size(dist_matrix,1), 1)
 
-	#query_dataset = find_points(find_highest(), 1000) 
+	query_dataset = find_points(find_highest(), 1000) 
 
 	#training_queries, testing_queries = make_queries(query_dataset, query_radius)
 
@@ -841,6 +844,57 @@ function test_queries_dist_matrix(query_radius)
 	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_from_matrix, testing_queries)
 	
 end
+
+function test_queries_dist_matrix(query_radius, num_times)
+
+	global distance,comparisons = counter(distance_from_matrix)
+
+	global distance_opt, comparisons_opt = counter(distance_from_matrix)
+
+	dataset = transpose(1:floor(size(dist_matrix,1)*3/4))
+
+	#query_dataset = vcat(find_points(10, 100), find_points(3000, 50))
+	point = rand(1:size(dist_matrix,1), num_times)
+	point2 = rand(1:size(dist_matrix,1), num_times)
+
+	avg_w_result = 0
+	avg_nw_result = 0
+	avg_b_result = 0
+	avg_num_result = 0
+
+	
+	for i=1:size(point,1)
+
+		query_dataset = vcat(find_points(point[i], 50), find_points(point2[i], 50))
+
+		training_queries, testing_queries = make_queries(query_dataset, query_radius)
+
+		weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
+
+		w_result, nw_result, b_result, num_result = test_queries(weighted_tree, non_weighted_tree, dataset, distance_from_matrix, testing_queries)
+
+		avg_w_result += w_result
+		avg_nw_result += nw_result
+		avg_b_result += b_result
+		avg_num_result += num_result
+
+	end
+
+	#training_queries, testing_queries = make_queries(query_dataset, query_radius)
+
+
+	#testing_queries = make_queries(dataset, 100, query_radius)
+
+	#training_queries = make_queries(query_dataset, 100, query_radius)
+
+	training_queries, testing_queries = make_queries(1:size(dist_matrix,1), query_radius, 100)
+
+	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
+
+	return avg_w_result/num_times, avg_nw_result/num_times, avg_b_result/num_times, avg_num_result/num_times
+	
+end
+
 
 function test_queries_gaussian(tree_size, query_radius, num_training_queries, dimension)
 
@@ -859,6 +913,7 @@ function test_queries_gaussian(tree_size, query_radius, num_training_queries, di
 
 	near_points = find_points(3, 100, distance_euclidean, dataset)
 
+
 	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimension,20,100.0)
 
 	testing_queries, training_queries = make_query_objects(query_dataset, query_radius)
@@ -869,6 +924,39 @@ function test_queries_gaussian(tree_size, query_radius, num_training_queries, di
 
 	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
 	
+end
+
+function test_queries_random_vectors(tree_size, query_radius, num_training_queries, dimension)
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	dataset = rand(0:100, dimension)
+
+	for i=1:tree_size-1
+		dataset = hcat(dataset, rand(0:100, dimension))
+	end
+
+	query_dataset = rand(40:50, dimension)
+
+	for i=1:num_training_queries-1
+		query_dataset = hcat(query_dataset, rand(40:50, dimension))
+	end
+
+	tree_dataset = dataset[:,1:convert(Int64, floor(size(dataset,2)/2))]
+
+	#query_dataset = find_points(500, 100, distance_euclidean, dataset)
+
+
+	testing_queries, training_queries = make_query_objects(query_dataset, query_radius)
+
+	weighted_tree, non_weighted_tree = build_trees(tree_dataset, training_queries)
+
+
+	return test_queries(weighted_tree, non_weighted_tree, tree_dataset, distance_euclidean, testing_queries)
+	
+
 end
 
 function test_queries_gaussian_mixture(tree_size, query_radius, num_training_queries, dimension)
@@ -966,7 +1054,7 @@ function plot_dist_matrix()
 	#for i=[1000,5000,10000,15000,20000]
 	for i=[5,10, 15, 20, 25, 30]
 
-		w_result, nw_result, b_result, num_result = test_queries_dist_matrix(i)
+		w_result, nw_result, b_result, num_result = test_queries_dist_matrix(i,10)
 		println("num result: $num_result")
 
 		w_result_f = 100*w_result/3150
@@ -997,6 +1085,59 @@ function plot_dist_matrix()
 	percent_b_results = b_results ./ 3150
 
 	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_chromecast.png")
+
+
+end
+
+function plot_random_vector(size_dataset)
+
+	w_results = Vector{Float64}()
+	nw_results = Vector{Float64}()
+	b_results = Vector{Float64}()
+
+	percent_results = Vector{Float64}()
+
+	io_w = open("plot_latex_rand_w.txt", "w")
+	io_nw = open("plot_latex_rand_nw.txt", "w")
+	io_b = open("plot_latex_rand_b.txt", "w")
+
+
+
+
+	#for i=[1000,5000,10000,15000,20000]
+	for i=[5,10,20,30,40,50,60]
+
+		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 5)
+		println("num result: $num_result")
+
+		w_result_f = 100*w_result/size_dataset
+		nw_result_f = 100*nw_result/size_dataset
+		b_result_f = 100*b_result/size_dataset
+
+		push!(w_results, w_result)
+		push!(nw_results, nw_result)
+		push!(b_results, b_result)
+
+		push!(percent_results, num_result/size_dataset)
+		y_axis_f = 100*num_result/size_dataset
+		write(io_w, "($y_axis_f,$w_result_f)")
+		write(io_nw, "($y_axis_f,$nw_result_f)")
+		write(io_b, "($y_axis_f,$b_result_f)")
+	end
+
+	close(io_nw)
+	close(io_w)
+	close(io_b)
+
+	println(w_results)
+	println(nw_results)
+	println(b_results)
+
+	percent_w_results = w_results ./ size_dataset
+	percent_nw_results = nw_results ./ size_dataset
+	percent_b_results = b_results ./ size_dataset
+
+	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_random.png")
 
 
 end
