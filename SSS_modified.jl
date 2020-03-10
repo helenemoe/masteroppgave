@@ -490,7 +490,10 @@ function find_range(query, queue, result, search_distance, comparisons)
 	else
 		weighted_distance = 0
 		temp_distances = zeros(0)
-		if tree.foci[1] == tree.id 
+		#println("tree.foci[1] $(tree.foci[1])")
+		#println("tree.id $(tree.id)")
+		if tree.foci[1] == tree.id
+			#println("gikk inn")
 			for i = 1:size(tree.foci,1)
 				distance = search_distance(tree.foci[i], point)
 				push!(temp_distances, distance)
@@ -504,6 +507,9 @@ function find_range(query, queue, result, search_distance, comparisons)
 		else
 			temp_distances = saved_distances
 			for i = 1:size(tree.foci,1)
+				#println(temp_distances)
+				#println(tree.weights)
+				#println(i)
 				weighted_distance += temp_distances[i]*tree.weights[i]
 				if tree.id == tree.foci[i]
 					query_dist = temp_distances[i]
@@ -938,13 +944,15 @@ function test_queries_random_vectors(tree_size, query_radius, num_training_queri
 		dataset = hcat(dataset, rand(0:100, dimension))
 	end
 
-	query_dataset = rand(40:50, dimension)
+	query_dataset = rand(20:30, dimension)
 
 	for i=1:num_training_queries-1
-		query_dataset = hcat(query_dataset, rand(40:50, dimension))
+		query_dataset = hcat(query_dataset, rand(20:30, dimension))
 	end
 
-	tree_dataset = dataset[:,1:convert(Int64, floor(size(dataset,2)/2))]
+	tree_dataset = dataset
+
+	#tree_dataset = dataset[:,1:convert(Int64, floor(size(dataset,2)/2))]
 
 	#query_dataset = find_points(500, 100, distance_euclidean, dataset)
 
@@ -1105,9 +1113,9 @@ function plot_random_vector(size_dataset)
 
 
 	#for i=[1000,5000,10000,15000,20000]
-	for i=[5,10,20,30,40,50,60]
+	for i=[5,20,40,60,80,90,100,110,120,140]
 
-		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 5)
+		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 15)
 		println("num result: $num_result")
 
 		w_result_f = 100*w_result/size_dataset
@@ -1127,6 +1135,51 @@ function plot_random_vector(size_dataset)
 
 	close(io_nw)
 	close(io_w)
+	close(io_b)
+
+	println(w_results)
+	println(nw_results)
+	println(b_results)
+
+	percent_w_results = w_results ./ size_dataset
+	percent_nw_results = nw_results ./ size_dataset
+	percent_b_results = b_results ./ size_dataset
+
+	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_random.png")
+
+
+end
+
+function plot_random_vector_dim(size_dataset)
+
+	w_results = Vector{Float64}()
+	nw_results = Vector{Float64}()
+	b_results = Vector{Float64}()
+
+	percent_results = Vector{Float64}()
+
+	io_b_15 = open("plot_latex_rand_b_15.txt", "w")
+	io_b_10 = open("plot_latex_rand_b_10.txt", "w")
+	io_b_5 = open("plot_latex_rand_b_5.txt", "w")
+	io_b_20 = open("plot_latex_rand_b_20.txt", "w")
+
+	files = [io_b_5, io_b_10, io_b_15, io_b_20]
+
+
+	for i=[5,10,15,20]
+	#for i=[1000,5000,10000,15000,20000]
+	for i=[5,10,20,30,40,50,60]
+
+		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 5)
+
+		b_result_f = 100*b_result/size_dataset
+
+		push!(b_results, b_result)
+
+		write(io_b, "($y_axis_f,$b_result_f)")
+	end
+	end
+
 	close(io_b)
 
 	println(w_results)
