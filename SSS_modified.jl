@@ -20,6 +20,8 @@ using Distributions
 
 using GaussianMixtures
 
+using BSON
+
 
 dist_matrix = readdlm("diffchromall_CharCostFunction2.5.txt")
 
@@ -370,7 +372,6 @@ function build_multi_ssstree_optimized(node, z, training_queries)
 		end
 		node
 	else
-
 		list = node.children
 		max = 0
 		for x = 1:size(list,1) 
@@ -478,7 +479,7 @@ end
 
 
 
-function find_range(query, queue, result, search_distance, comparisons)
+function find_range_inner(query, queue, result, search_distance, comparisons)
 	tree = dequeue!(queue)
 	point = query.focus
 	range = query.radius
@@ -523,29 +524,31 @@ function find_range(query, queue, result, search_distance, comparisons)
 
 		dist_to_query = query_dist
 
-		
 		if dist_to_query - range <= 0.0 + TOLERANCE
 			push!(result, tree.id)
 		end
 
 		dist_to_point = weighted_distance
 
-
+		#if true
 		if dist_to_point <= range + tree.radius + TOLERANCE
 			for i = 1:size(tree.children, 1)
 				enqueue!(queue, tree.children[i])
 			end
 		end
 	end
+	"""
 	if ! isempty(queue)
 		find_range(query, queue, result, search_distance, comparisons)
 	else
 		return result, comparisons()
 	end
+	"""
+	return queue, result, comparisons()
 end
 
 
-function find_range(query, queue_normal, queue_optimized, result, search_distance, comparisons)
+function find_range_inner(query, queue_normal, queue_optimized, result, search_distance, comparisons)
 	w_tree = dequeue!(queue_optimized)
 	nw_tree = dequeue!(queue_normal)
 
@@ -590,6 +593,7 @@ function find_range(query, queue_normal, queue_optimized, result, search_distanc
 
 		dist_to_query = query_dist
 
+		#if true
 		if dist_to_query - range <= 0
 			push!(result, nw_tree.id)
 		end
@@ -602,6 +606,7 @@ function find_range(query, queue_normal, queue_optimized, result, search_distanc
 			tree_radius = w_tree.radius
 		end
 
+		#if true
 		if dist_to_point <= range + tree_radius + TOLERANCE
 			for i = 1:size(nw_tree.children, 1)
 				enqueue!(queue_normal, nw_tree.children[i])
@@ -609,11 +614,30 @@ function find_range(query, queue_normal, queue_optimized, result, search_distanc
 			end
 		end
 	end
+	"""
 	if ! isempty(queue_normal)
 		find_range(query, queue_normal, queue_optimized, result, search_distance, comparisons)
 	else
 		return result, comparisons()
 	end
+	"""
+	return queue_normal, queue_optimized, result, comparisons()
+end
+
+function find_range(query, queue, result, search_distance, comparisons)
+	comp = 0
+	while ! isempty(queue)
+		queue, result, comp = find_range_inner(query, queue, result, search_distance, comparisons)
+	end
+	return result, comp
+end
+
+function find_range(query, queue_normal, queue_optimized, result, search_distance, comparisons)
+	comp = 0
+	while ! isempty(queue_normal)
+		queue_normal, queue_optimized, result, comp = find_range_inner(query, queue_normal, queue_optimized, result, search_distance, comparisons)
+	end
+	return result, comp
 end
 
 
@@ -847,6 +871,8 @@ function test_queries_dist_matrix(query_radius)
 
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
+	bson("test.bson", Dict(:a => weighted_tree, :b => non_weighted_tree))
+
 	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_from_matrix, testing_queries)
 	
 end
@@ -929,6 +955,30 @@ function test_queries_gaussian(tree_size, query_radius, num_training_queries, di
 	weighted_tree, non_weighted_tree = build_trees(dataset, training_queries)
 
 	return test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
+	
+end
+
+function test_queries_corel(query_radius, num_training_queries)
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	dataset = read_corel_images()
+
+	tree_dataset = dataset[:, 1:convert(Int64, floor(size(dataset,2)*0.5))]
+
+	query_dataset = find_points(3, num_training_queries, distance_euclidean, dataset)
+
+	#testing_query_dataset, labeling, cluster_means = generate_gaussian_data(2000,dimension,20,100.0)
+
+	testing_queries, training_queries = make_query_objects(query_dataset, query_radius)
+
+	#training_queries = make_query_objects(training_query_dataset, query_radius)
+
+	weighted_tree, non_weighted_tree = build_trees(tree_dataset, training_queries)
+
+	return test_queries(weighted_tree, non_weighted_tree, tree_dataset, distance_euclidean, testing_queries)
 	
 end
 
@@ -1113,9 +1163,9 @@ function plot_random_vector(size_dataset)
 
 
 	#for i=[1000,5000,10000,15000,20000]
-	for i=[5,20,40,60,80,90,100,110,120,140]
+	for i=[110,140,200,300]
 
-		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 15)
+		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 20)
 		println("num result: $num_result")
 
 		w_result_f = 100*w_result/size_dataset
@@ -1150,7 +1200,78 @@ function plot_random_vector(size_dataset)
 
 end
 
-function plot_random_vector_dim(size_dataset)
+function read_corel_images()
+	"""open("ColorMoments.asc") do color
+		for line in eachline(color)
+			println(line)
+		end
+	end"""
+
+	color_moments = readdlm("ColorMoments.asc")
+
+	color_moments = color_moments[:,2:size(color_moments,2)]
+
+	color_moments = transpose(color_moments)
+
+	return color_moments
+
+
+end
+
+function build_bson_corel()
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	dataset = read_corel_images()
+
+	tree_dataset = dataset[:, 1:convert(Int64, floor(size(dataset,2)*0.5))]
+
+	query_dataset = find_points(20000, 100, distance_euclidean, dataset)
+
+	testing_queries, training_queries = make_query_objects(query_dataset, 0)
+
+	weighted_tree, non_weighted_tree = build_trees(tree_dataset, training_queries)
+
+	bson("corel.bson", Dict(:w => weighted_tree, :nw => non_weighted_tree, :tq => testing_queries))
+
+end
+
+function build_bson_corel()
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	dataset = read_corel_images()
+
+	tree_dataset = dataset[:, 1:convert(Int64, floor(size(dataset,2)*0.5))]
+
+	query_dataset = find_points(20000, 100, distance_euclidean, dataset)
+
+	testing_queries, training_queries = make_query_objects(query_dataset, 0)
+
+	weighted_tree, non_weighted_tree = build_trees(tree_dataset, training_queries)
+
+	bson("corel_non_weighted.bson", Dict(:w => weighted_tree, :nw => non_weighted_tree, :tq => testing_queries))
+end
+
+function plot_corel_images()
+
+	bsondata = BSON.load("corel.bson")
+
+	weighted_tree = bsondata[:w]
+
+	non_weighted_tree = bsondata[:nw]
+
+	testing_queries = bsondata[:tq]
+
+
+	dataset = read_corel_images()
+
+	tree_dataset = dataset[:, 1:convert(Int64, floor(size(dataset,2)*0.5))]
+
 
 	w_results = Vector{Float64}()
 	nw_results = Vector{Float64}()
@@ -1158,28 +1279,45 @@ function plot_random_vector_dim(size_dataset)
 
 	percent_results = Vector{Float64}()
 
-	io_b_15 = open("plot_latex_rand_b_15.txt", "w")
-	io_b_10 = open("plot_latex_rand_b_10.txt", "w")
-	io_b_5 = open("plot_latex_rand_b_5.txt", "w")
-	io_b_20 = open("plot_latex_rand_b_20.txt", "w")
+	io_w = open("plot_latex_rand_w.txt", "w")
+	io_nw = open("plot_latex_rand_nw.txt", "w")
+	io_b = open("plot_latex_rand_b.txt", "w")
 
-	files = [io_b_5, io_b_10, io_b_15, io_b_20]
+	dataset = read_corel_images()
+
+	size_dataset = convert(Int64, floor(size(dataset,2)*0.5))
 
 
-	for i=[5,10,15,20]
-	#for i=[1000,5000,10000,15000,20000]
-	for i=[5,10,20,30,40,50,60]
+	for i=1:25
+	#for i=[1,2,3,4,4.2,4.4,4.6,4.8,5]
 
-		w_result, nw_result, b_result, num_result = test_queries_random_vectors(size_dataset, i, 1000, 5)
+		for j=1:size(testing_queries,1)
+			testing_queries[j].radius = i * 0.1
+		end
 
+		w_result, nw_result, b_result, num_result = test_queries(weighted_tree, non_weighted_tree, tree_dataset, distance_euclidean, testing_queries)
+
+		
+		println("num result: $num_result")
+
+		w_result_f = 100*w_result/size_dataset
+		nw_result_f = 100*nw_result/size_dataset
 		b_result_f = 100*b_result/size_dataset
 
+		push!(w_results, w_result)
+		push!(nw_results, nw_result)
 		push!(b_results, b_result)
 
+		push!(percent_results, num_result/size_dataset)
+		y_axis_f = 100*num_result/size_dataset
+		write(io_w, "($y_axis_f,$w_result_f)")
+		write(io_nw, "($y_axis_f,$nw_result_f)")
 		write(io_b, "($y_axis_f,$b_result_f)")
-	end
+
 	end
 
+	close(io_nw)
+	close(io_w)
 	close(io_b)
 
 	println(w_results)
@@ -1191,7 +1329,6 @@ function plot_random_vector_dim(size_dataset)
 	percent_b_results = b_results ./ size_dataset
 
 	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_random.png")
-
 
 end
 
