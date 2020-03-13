@@ -705,6 +705,23 @@ function build_trees(dataset, training_queries)
 	return weighted_tree, non_weighted_tree
 end
 
+function build_weighted_tree(dataset, training_queries)
+	
+	weigthed_base_tree = make_base_tree(dataset)
+
+	weighted_tree = build_multi_ssstree_optimized(weigthed_base_tree, Vector{Float64}(), training_queries)
+
+	return weighted_tree
+end
+
+function build_non_weighted_tree(dataset)
+	non_weigthed_base_tree = make_base_tree(dataset)
+
+	non_weighted_tree = build_multi_ssstree(non_weigthed_base_tree)
+
+	return non_weighted_tree
+end
+
 function test_queries(weighted_tree, non_weighted_tree, dataset, distance_function, testing_queries)
 
 	sum_comparisons_weighted = 0
@@ -1218,7 +1235,7 @@ function read_corel_images()
 
 end
 
-function build_bson_corel()
+function build_weighted_bson_corel()
 
 	global distance,comparisons = counter(distance_euclidean)
 
@@ -1232,13 +1249,13 @@ function build_bson_corel()
 
 	testing_queries, training_queries = make_query_objects(query_dataset, 0)
 
-	weighted_tree, non_weighted_tree = build_trees(tree_dataset, training_queries)
+	weighted_tree = build_weighted_tree(tree_dataset, training_queries)
 
-	bson("corel.bson", Dict(:w => weighted_tree, :nw => non_weighted_tree, :tq => testing_queries))
+	bson("corel.bson", Dict(:w => weighted_tree, :tq => testing_queries))
 
 end
 
-function build_bson_corel()
+function build_non_weighted_bson_corel()
 
 	global distance,comparisons = counter(distance_euclidean)
 
@@ -1248,22 +1265,20 @@ function build_bson_corel()
 
 	tree_dataset = dataset[:, 1:convert(Int64, floor(size(dataset,2)*0.5))]
 
-	query_dataset = find_points(20000, 100, distance_euclidean, dataset)
+	non_weighted_tree = build_non_weighted_tree(tree_dataset)
 
-	testing_queries, training_queries = make_query_objects(query_dataset, 0)
-
-	weighted_tree, non_weighted_tree = build_trees(tree_dataset, training_queries)
-
-	bson("corel_non_weighted.bson", Dict(:w => weighted_tree, :nw => non_weighted_tree, :tq => testing_queries))
+	bson("corel_non_weighted.bson", Dict(:nw => non_weighted_tree))
 end
 
 function plot_corel_images()
 
 	bsondata = BSON.load("corel.bson")
 
+	bsondata_non_weighted = BSON.load("corel_non_weighted.bson")
+
 	weighted_tree = bsondata[:w]
 
-	non_weighted_tree = bsondata[:nw]
+	non_weighted_tree = bsondata_non_weighted[:nw]
 
 	testing_queries = bsondata[:tq]
 
@@ -1283,10 +1298,7 @@ function plot_corel_images()
 	io_nw = open("plot_latex_rand_nw.txt", "w")
 	io_b = open("plot_latex_rand_b.txt", "w")
 
-	dataset = read_corel_images()
-
-	size_dataset = convert(Int64, floor(size(dataset,2)*0.5))
-
+	size_dataset = size(tree_dataset,2)
 
 	for i=1:25
 	#for i=[1,2,3,4,4.2,4.4,4.6,4.8,5]
