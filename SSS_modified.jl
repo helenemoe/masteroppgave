@@ -524,7 +524,7 @@ function find_range_inner(query, queue, result, search_distance, comparisons)
 
 		dist_to_query = query_dist
 
-		if dist_to_query - range <= 0.0 + TOLERANCE
+		if dist_to_query - range <= 0.0
 			push!(result, tree.id)
 		end
 
@@ -664,6 +664,9 @@ function search_tree(query, tree, dataset, distance_function)
 	result, comparisons = find_range(query, queue, Vector{Any}(), search_distance, search_comparisons)
 
 	linear_search_result, c = find_range_linear_search(query, dataset, distance_function)
+
+	#println(size(result))
+	#println(size(linear_search_result))
 
 	@assert issetequal(Set(result), Set(linear_search_result))
 
@@ -942,6 +945,75 @@ function test_queries_dist_matrix(query_radius, num_times)
 
 	return avg_w_result/num_times, avg_nw_result/num_times, avg_b_result/num_times, avg_num_result/num_times
 	
+end
+
+function generate_gaussian_bson()
+
+	dim = 5
+
+	#dataset, labeling, cluster_means = generate_gaussian_data(100000,5,10,100.0)
+		
+	mean = rand(0:10,dim)
+	d = MvNormal(mean, rand(0:50))
+	dataset = rand(d,100)
+	for i=1:10
+		mean = rand(0:10,dim)
+		d = MvNormal(mean, rand(10:50))
+		dataset = hcat(dataset,rand(d,rand(5000:15000)))
+	end
+
+	println(size(dataset))
+
+	bson("gaussian_dataset.bson", Dict(:d => dataset))
+end
+
+function build_weighted_bson_gaussian()
+
+	bsondata = BSON.load("gaussian_dataset.bson")
+
+	dataset = bsondata[:d]
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	dim = 5
+
+	#dataset, labeling, cluster_means = generate_gaussian_data(100000,5,10,100.0)
+		
+	mean = rand(1:10,dim)
+	d = MvNormal(mean, 10)
+	query_dataset = rand(d,500)
+	println(mean)
+	for i=1:1
+		mean = rand(1:10,dim)
+		println(mean)
+		d = MvNormal(mean, rand(10:50))
+		query_dataset = hcat(dataset,rand(d,500))
+	end
+
+	testing_queries, training_queries = make_query_objects(query_dataset, 0)
+
+	#near_points = find_points(3, 100, distance_euclidean, dataset)
+	weighted_tree = build_weighted_tree(dataset, training_queries)
+
+	bson("gaussian_weighted.bson", Dict(:w => weighted_tree, :tq => testing_queries))
+
+end
+
+function build_non_weighted_bson_gaussian()
+
+	bsondata = BSON.load("gaussian_dataset.bson")
+
+	dataset = bsondata[:d]
+
+	global distance,comparisons = counter(distance_euclidean)
+
+	global distance_opt, comparisons_opt = counter(distance_euclidean)
+
+	non_weighted_tree = build_non_weighted_tree(dataset)
+
+	bson("gaussian_non_weighted.bson", Dict(:nw => non_weighted_tree))
 end
 
 
@@ -1245,7 +1317,7 @@ function build_weighted_bson_corel()
 
 	tree_dataset = dataset[:, 1:convert(Int64, floor(size(dataset,2)*0.5))]
 
-	query_dataset = find_points(20000, 100, distance_euclidean, dataset)
+	query_dataset = hcat(find_points(61830, 333, distance_euclidean, dataset))#),find_points(58685, 333, distance_euclidean, dataset), find_points(3, 333, distance_euclidean, dataset))
 
 	testing_queries, training_queries = make_query_objects(query_dataset, 0)
 
@@ -1300,11 +1372,14 @@ function plot_corel_images()
 
 	size_dataset = size(tree_dataset,2)
 
-	for i=1:25
+	for i=1:10
 	#for i=[1,2,3,4,4.2,4.4,4.6,4.8,5]
+		#if i%2 == 0
+		#	continue
+		#end
 
 		for j=1:size(testing_queries,1)
-			testing_queries[j].radius = i * 0.1
+			testing_queries[j].radius = i *0.5
 		end
 
 		w_result, nw_result, b_result, num_result = test_queries(weighted_tree, non_weighted_tree, tree_dataset, distance_euclidean, testing_queries)
@@ -1340,7 +1415,82 @@ function plot_corel_images()
 	percent_nw_results = nw_results ./ size_dataset
 	percent_b_results = b_results ./ size_dataset
 
-	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_random.png")
+	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_corel.png")
+
+end
+
+function plot_gaussian_new()
+
+	bsondata = BSON.load("gaussian_dataset.bson")
+
+	dataset = bsondata[:d]
+
+	bsondata = BSON.load("gaussian_weighted.bson")
+
+	bsondata_non_weighted = BSON.load("gaussian_non_weighted.bson")
+
+	weighted_tree = bsondata[:w]
+
+	non_weighted_tree = bsondata_non_weighted[:nw]
+
+	testing_queries = bsondata[:tq]
+
+	w_results = Vector{Float64}()
+	nw_results = Vector{Float64}()
+	b_results = Vector{Float64}()
+
+	percent_results = Vector{Float64}()
+
+	io_w = open("plot_latex_gaus_w.txt", "w")
+	io_nw = open("plot_latex_gaus_nw.txt", "w")
+	io_b = open("plot_latex_gaus_b.txt", "w")
+
+	size_dataset = 94009
+
+	for i=9#1:4.5
+	#for i=[1,2,3,4,4.2,4.4,4.6,4.8,5]
+		#if i%2 == 0
+		#	continue
+		#end
+
+		for j=1:size(testing_queries,1)
+			testing_queries[j].radius = i * 10
+		end
+
+		w_result, nw_result, b_result, num_result = test_queries(weighted_tree, non_weighted_tree, dataset, distance_euclidean, testing_queries)
+
+		
+		println("num result: $num_result")
+
+		w_result_f = 100*w_result/size_dataset
+		nw_result_f = 100*nw_result/size_dataset
+		b_result_f = 100*b_result/size_dataset
+
+		push!(w_results, w_result)
+		push!(nw_results, nw_result)
+		push!(b_results, b_result)
+
+		push!(percent_results, num_result/size_dataset)
+		y_axis_f = 100*num_result/size_dataset
+		write(io_w, "($y_axis_f,$w_result_f)")
+		write(io_nw, "($y_axis_f,$nw_result_f)")
+		write(io_b, "($y_axis_f,$b_result_f)")
+
+	end
+
+	close(io_nw)
+	close(io_w)
+	close(io_b)
+
+	println(w_results)
+	println(nw_results)
+	println(b_results)
+
+	percent_w_results = w_results ./ size_dataset
+	percent_nw_results = nw_results ./ size_dataset
+	percent_b_results = b_results ./ size_dataset
+
+	savefig(plot(percent_results, [percent_w_results, percent_nw_results, percent_b_results], title="Comparisons",label=["W" "NW" "B"]), "plot_gaus.png")
 
 end
 
