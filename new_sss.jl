@@ -357,7 +357,7 @@ function build_multi_ssstree_optimized(node, z, training_queries)
 			for y = 1:size(children_list,1)
 				nodey = children_list[y]
 				
-				dist = distance(nodey.foci[1], nodex.foci[1])
+				dist = distance_opt(nodey.foci[1], nodex.foci[1])
 
 				if dist < Ma
 					if dist < min_dist
@@ -462,6 +462,9 @@ end
 
 function find_biggest_dist(dataset1, dataset2, modulo, distance_function)
 
+	println(size(dataset1))
+	println(size(dataset2))
+
 	distance,comparisons = counter(distance_function)
 
 	biggest_dist = 0
@@ -529,11 +532,11 @@ end
 
 function make_cluster_queries(dataset, num_clusters, distance_function)
 
-	query_data = find_points(find_biggest_dist(dataset, dataset, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset)
+	query_data = find_points(find_biggest_dist(dataset, dataset, 10, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset)
 
 	query_before = Set(query_data)
 	for i=1:num_clusters-1
-		query_data = hcat(query_data, find_points(find_biggest_dist(transpose(setdiff(dataset,query_data)),query_data, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset))
+		query_data = hcat(query_data, find_points(find_biggest_dist(dataset,query_data, 10, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset))
 		query_after = Set(query_data)
 		@assert query_before != query_after
 		query_before = query_after
@@ -901,11 +904,67 @@ function build_w_corel(num_clusters)
 end
 
 function corel_main()
-	radii = [1,20,25,30,35,37,38,40,41,42,43,43.5,44,44.5,45,46,47,48]
-	plot(transpose(1:size(dist_matrix,1)), distance_from_matrix, radii)
+	dataset = read_corel_images()
+	radii = [0,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.2,2.4]
+	plot(dataset, distance_euclidean, radii)
 end
 
+#----------------------- Radnom vectors-------------------------------------------------------
 
+function generate_random_vectors_bson(dimension, tree_size)
+
+	dataset = rand(dimension)
+	for i=1:tree_size-1
+		dataset = hcat(dataset, rand(dimension))
+	end
+	bson("random_vectors_dataset.bson", Dict(:d => dataset))
+end 
+
+function build_nw_random_vectors()
+	dataset = BSON.load("random_vectors_dataset.bson")[:d]
+	build_non_weighted_bson(dataset, distance_euclidean)
+end
+
+function build_w_random_vectors(num_clusters)
+	dataset = BSON.load("random_vectors_dataset.bson")[:d]
+	build_weighted_bson(dataset, make_cluster_queries(dataset, num_clusters, distance_euclidean), distance_euclidean)
+end
+
+function random_vectors_main()
+	dataset = BSON.load("random_vectors_dataset.bson")[:d]
+	radii = [0,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.2,2.4]
+	plot(dataset, distance_euclidean, radii)
+end
+
+#----------------------- Radnom vectors-------------------------------------------------------
+
+function generate_gaussian_bson(dimension)
+	mean = rand(dimension)
+	d = MvNormal(mean, 1)
+	dataset = rand(d,10000)
+	for i=2:10
+		mean = rand(dimension)
+		d = MvNormal(mean, 1)
+		dataset = hcat(dataset,rand(d,10000)))
+	end
+	bson("gaussian_dataset.bson", Dict(:d => dataset))
+end
+
+function build_nw_gaussian()
+	dataset = BSON.load("gaussian_dataset.bson")[:d]
+	build_non_weighted_bson(dataset, distance_euclidean)
+end
+
+function build_w_gaussian(num_clusters)
+	dataset = BSON.load("gaussian_dataset.bson")[:d]
+	build_weighted_bson(dataset, make_cluster_queries(dataset, num_clusters, distance_euclidean), distance_euclidean)
+end
+
+function gaussian_main()
+	dataset = BSON.load("gaussian_dataset.bson")[:d]
+	radii = [0,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.2,2.4]
+	plot(dataset, distance_euclidean, radii)
+end
 
 end
 
