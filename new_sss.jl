@@ -71,9 +71,10 @@ mutable struct MultiFocalNode
     weights :: Vector{Float64}
 end
 
+
 function make_query_objects(query_dataset, query_radius)
 
-	test_query_foci_index = sample(1:convert(Int64, floor(size(query_dataset,2)/2)), convert(Int64, floor(size(query_dataset,2)/2)), replace=false)
+	test_query_foci_index = sample(1:size(query_dataset,2), NUM_TEST_Q, replace=false)
 
 	test_query_foci = Vector{Any}()
 	train_query_foci = Vector{Any}()
@@ -108,6 +109,7 @@ function make_query_objects(query_dataset, query_radius)
 	return test_queries, train_queries
 
 end
+
 
 function make_base_tree(dataset)
 	multi_sss_children = Vector{MultiFocalNode}()
@@ -357,7 +359,7 @@ function build_multi_ssstree_optimized(node, z, training_queries)
 			for y = 1:size(children_list,1)
 				nodey = children_list[y]
 				
-				dist = distance(nodey.foci[1], nodex.foci[1])
+				dist = distance_opt(nodey.foci[1], nodex.foci[1])
 
 				if dist < Ma
 					if dist < min_dist
@@ -487,6 +489,25 @@ function find_biggest_dist(dataset1, dataset2, modulo, distance_function)
 	return biggest_index
 end
 
+function setdiff_new(mat1,mat2)
+	println(size(mat1))
+	mat3 = Array{Float64}(undef, size(mat1,1),0)
+	for i=1:size(mat1,2)
+		is_in = true
+		for j=1:size(mat2,2)
+			if mat1[:,i] == mat2[:,j]
+				is_in = false
+				break
+			end
+		end
+		if is_in
+			mat3 = hcat(mat3, mat1[:,i])
+		end
+	end
+	println(size(mat3))
+	return mat3
+end
+
 function build_weighted_tree(dataset, training_queries)
 	
 	weigthed_base_tree = make_base_tree(dataset)
@@ -528,13 +549,18 @@ function build_non_weighted_bson(dataset, distance_function)
 end
 
 function make_cluster_queries(dataset, num_clusters, distance_function)
-
-	query_data = find_points(find_biggest_dist(dataset, dataset, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset)
+	point = find_biggest_dist(dataset, dataset, 1, distance_function)
+	println("første: $point")
+	query_data = find_points(point,convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset)
 
 	query_before = Set(query_data)
 	for i=1:num_clusters-1
-		query_data = hcat(query_data, find_points(find_biggest_dist(transpose(setdiff(dataset,query_data)),query_data, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset))
+		point = find_biggest_dist(setdiff_new(dataset, query_data),query_data, 1, distance_function)
+		println("i løkken: $point")
+		query_data = hcat(query_data, find_points(point,convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, setdiff_new(dataset,query_data)))
 		query_after = Set(query_data)
+		println(length(query_before))
+		println(length(query_after))
 		@assert query_before != query_after
 		query_before = query_after
 	end
@@ -804,7 +830,7 @@ function test_queries(weighted_tree, non_weighted_tree, dataset, distance_functi
 	return sum_comparisons_weighted/test_query_length, sum_comparisons_non_weighted/test_query_length, sum_comparisons_both/test_query_length, avg_restult/test_query_length
 end
 
-function plot(dataset, distance_function, radii)
+function plot_main(dataset, distance_function, radii)
 
 	bsondata_weighted = BSON.load("weighted.bson")
 
@@ -834,7 +860,7 @@ function plot(dataset, distance_function, radii)
 		end
 
 		w_comparisons, nw_comparisons, b_comparisons, num_result = test_queries(weighted_tree, non_weighted_tree, dataset, distance_function, testing_queries)
-
+		println(w_comparisons)
 		
 		println("num result: $num_result")
 
@@ -857,7 +883,9 @@ function plot(dataset, distance_function, radii)
 	println(nw_results)
 	println(b_results)
 
-	savefig(plot(num_results, [w_results, nw_results, b_results], title="Comparisons",label=["W" "NW" "B"]), "plot.png")
+	println("nim_results: $num_results")
+	println("w_resuilt: $w_results")
+	#savefig(plot(num_results, [w_results, nw_results, b_results], title="Comparisons",label=["W" "NW" "B"]), "plot.png")
 
 
 end
@@ -878,8 +906,9 @@ function build_w_dist_matrix_uniform()
 end
 
 function dist_matrix_main()
-	radii = [1,20,25,30,35,37,38,40,41,42,43,43.5,44,44.5,45,46,47,48]
-	plot(transpose(1:size(dist_matrix,1)), distance_from_matrix, radii)
+	#radii = [1,20,25,30,35,37,38,40,41,42,43,43.5,44,44.5,45,46,47,48]
+	radii = [1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+	plot_main(transpose(1:size(dist_matrix,1)), distance_from_matrix, radii)
 end
 
 #----------------------- Corel data set -------------------------------------------------------
@@ -901,10 +930,70 @@ function build_w_corel(num_clusters)
 end
 
 function corel_main()
-	radii = [1,20,25,30,35,37,38,40,41,42,43,43.5,44,44.5,45,46,47,48]
-	plot(transpose(1:size(dist_matrix,1)), distance_from_matrix, radii)
+	dataset = read_corel_images()
+	radii = [0,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.2,2.4]
+	plot_main(dataset, distance_euclidean, radii)
 end
 
+#----------------------- Radnom vectors-------------------------------------------------------
+
+function generate_random_vectors_bson(dimension, tree_size)
+
+	dataset = rand(dimension)
+	for i=1:tree_size-1
+		dataset = hcat(dataset, rand(dimension))
+	end
+	bson("random_vectors_dataset.bson", Dict(:d => dataset))
+end 
+
+function build_nw_random_vectors()
+	dataset = BSON.load("random_vectors_dataset.bson")[:d]
+	build_non_weighted_bson(dataset, distance_euclidean)
+end
+
+function build_w_random_vectors(num_clusters)
+	dataset = BSON.load("random_vectors_dataset.bson")[:d]
+	build_weighted_bson(dataset, make_cluster_queries(dataset, num_clusters, distance_euclidean), distance_euclidean)
+end
+
+function random_vectors_main()
+	dataset = BSON.load("random_vectors_dataset.bson")[:d]
+	#radii = [0,0.05,0.06,0.07,0.08,0.09,0.1,0.11,0.12,0.13,0.14,0.15,0.16,0.17,0.175,0.18,0.185]#1:10 .* 0.01
+	#radii = [0,0.1,0.2,0.3,0.4,0.41,0.42,0.43,0.44,0.45,0.46,0.47,0.48,0.49,0.5,0.51,0.52]
+	radii = [0.8]
+	#radii =  radii .* 0.1
+	plot_main(dataset, distance_euclidean, radii)
+end
+
+#----------------------- Random vectors-------------------------------------------------------
+
+function generate_gaussian_bson(dimension)
+	mean = rand(dimension)
+	d = MvNormal(mean, 1)
+	dataset = rand(d,10000)
+	for i=2:10
+		mean = rand(dimension)
+		d = MvNormal(mean, 1)
+		dataset = hcat(dataset,rand(d,10000))
+	end
+	bson("gaussian_dataset.bson", Dict(:d => dataset))
+end
+
+function build_nw_gaussian()
+	dataset = BSON.load("gaussian_dataset.bson")[:d]
+	build_non_weighted_bson(dataset, distance_euclidean)
+end
+
+function build_w_gaussian(num_clusters)
+	dataset = BSON.load("gaussian_dataset.bson")[:d]
+	build_weighted_bson(dataset, make_cluster_queries(dataset, num_clusters, distance_euclidean), distance_euclidean)
+end
+
+function gaussian_main()
+	dataset = BSON.load("gaussian_dataset.bson")[:d]
+	radii = [0,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.2,2.4]
+	plot_main(dataset, distance_euclidean, radii)
+end
 
 
 end
