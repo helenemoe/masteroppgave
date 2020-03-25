@@ -71,6 +71,25 @@ mutable struct MultiFocalNode
     weights :: Vector{Float64}
 end 
 
+function setdiff_new(mat1,mat2)
+	println(size(mat1))
+	mat3 = Array{Float64}(undef, size(mat1,1),0)
+	for i=1:size(mat1,2)
+		is_in = true
+		for j=1:size(mat2,2)
+			if mat1[:,i] == mat2[:,j]
+				is_in = false
+				break
+			end
+		end
+		if is_in
+			mat3 = hcat(mat3, mat1[:,i])
+		end
+	end
+	println(size(mat3))
+	return mat3
+end
+
 function make_query_objects(query_dataset, query_radius)
 
 	test_query_foci_index = sample(1:size(query_dataset,2), convert(Int64,size(query_dataset,2)*(NUM_TEST_Q/NUM_QUERIES)), replace=false)
@@ -533,9 +552,13 @@ function build_all_weighted_bson(dataset, query_dataset1, query_dataset2, distan
 
 	weighted_tree_2 = build_weighted_tree(dataset, training_queries2)
 
-	weighted_tree = build_weighted_tree(dataset, hcat(training_queries1, training_queries2))
+	weighted_tree = build_weighted_tree(dataset, vcat(training_queries1, training_queries2))
 
-	bson("all_weighted.bson", Dict(:w => weighted_tree, :w1 => weighted_tree_1,:w2 => weighted_tree_2,:tq => hcat(testing_queries1, testing_queries2)))
+	testing_queries = vcat(testing_queries1, testing_queries2)
+
+	println(size(testing_queries))
+
+	bson("all_weighted.bson", Dict(:w => weighted_tree, :w1 => weighted_tree_1,:w2 => weighted_tree_2,:tq => testing_queries))
 
 end
 
@@ -549,6 +572,8 @@ function build_non_weighted_bson(dataset, distance_function)
 
 	bson("non_weighted.bson", Dict(:nw => non_weighted_tree))
 end
+
+
 
 function make_cluster_queries(dataset, num_clusters, distance_function)
 
@@ -571,9 +596,13 @@ function make_2cluster_queries(dataset, distance_function)
 
 	num_clusters = 2
 
+	println(find_biggest_dist(dataset, dataset, 1, distance_function))
+
 	query_data = find_points(find_biggest_dist(dataset, dataset, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset)
 
-	query_data2 = find_points(find_biggest_dist(transpose(setdiff(dataset,query_data)),query_data, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, dataset)
+	println(find_biggest_dist(setdiff_new(dataset,query_data),query_data, 1, distance_function))
+
+	query_data2 = find_points(find_biggest_dist(setdiff_new(dataset,query_data),query_data, 1, distance_function),convert(Int64,floor(NUM_QUERIES/num_clusters)), distance_function, setdiff_new(dataset, query_data))
 
 	return query_data, query_data2
 
@@ -861,6 +890,7 @@ function plot_main(dataset, distance_function, radii)
 
 	testing_queries = bsondata[:tq]
 
+	println("testing : $(size(testing_queries))")
 
 	w_results = Vector{Float64}()
 	nw_results = Vector{Float64}()
@@ -906,13 +936,14 @@ function plot_main(dataset, distance_function, radii)
 	#plot(num_results, w_results)
 	#savefig(plot(num_results, [w_results, nw_results, b_results]), "plot.png")
 end
+
 #----------------------- Chromosome data set ------------------------------------------------
 
 function build_nw_dist_matrix()
 	build_non_weighted_bson(transpose(1:size(dist_matrix,1)), distance_from_matrix)
 end
 
-function build_w_facet()
+function build_w_facet_dist_matrix()
 	dataset = transpose(1:size(dist_matrix,1))
 	make_cluster_queries(dataset, 2, distance_from_matrix)
 	query_data1, query_data2 = make_2cluster_queries(dataset, distance_from_matrix)
@@ -931,9 +962,39 @@ function build_w_dist_matrix_uniform()
 end
 
 function dist_matrix_main()
-	radii = [1,20,25,30,35,37,38,40,41,42,43,43.5,44,44.5,45,46,47,48]
+	radii = [1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+	#radii = [1,20,25,30,35,37,38,40,41,42,43,43.5,44,44.5,45,46,47,48]
 	plot_main(transpose(1:size(dist_matrix,1)), distance_from_matrix, radii)
 end
+
+#----------------------- Corel data set ------------------------------------------------
+
+function read_corel_images()
+	color_moments = readdlm("ColorMoments.asc")
+	color_moments = color_moments[:,2:size(color_moments,2)]
+	return transpose(color_moments)
+end
+
+function build_nw_corel()
+	dataset = read_corel_images()
+	build_non_weighted_bson(dataset, distance_euclidean)
+end
+
+function build_w_facet_corel()
+	dataset = read_corel_images()
+	query_data1, query_data2 = make_2cluster_queries(dataset, distance_euclidean)
+	println(Set(query_data1) == Set(query_data2))
+ 	build_all_weighted_bson(dataset, query_data1, query_data2, distance_euclidean)
+end
+
+function corel_main()
+	dataset = read_corel_images()
+	radii = [0,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.2,2.4]
+	plot_main(dataset, distance_euclidean, radii)
+end
+
+
+
 
 end
 
